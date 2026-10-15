@@ -1,0 +1,18 @@
+# v10a.1: per-object ACL collection from a host with no C2 finding — a user
+# dump, then each account's security descriptor read one object at a time
+# (the lab Havoc host's shape; plain LDAP here, the RRC-signed form is in
+# TestReconACLSweep). Standalone recon,
+# capped at medium.
+name: shape-ldap-acl-sweep
+seed: 1007
+streams:
+  - label: c2
+    shape: recon=acl-sweep
+    transport: ldap
+    server: 10.86.0.10
+    topology: {clients: [10.86.0.5]}
+    timing: {model: poisson, sleep: 600, events: 1}
+    content: {preset: acl-sweep}
+expect:
+  - {engine: v1, category: recon, server: 10.86.0.10, min: 0.4, max: 0.64, evidence: "ldap_acl_sweep"}
+  - {engine: v2, category: recon, server: 10.86.0.10, min: 0.4, max: 0.64, evidence: "ldap_acl_sweep"}

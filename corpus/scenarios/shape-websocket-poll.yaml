@@ -1,0 +1,11 @@
+name: shape-websocket-poll
+seed: 203
+streams:
+  - label: c2
+    shape: transport=websocket-poll,encoding=base64
+    transport: websocket-poll
+    server: 198.51.100.70
+    name: ws.example
+    topology: {clients: [10.5.0.23]}
+    timing: {model: shortening, sleep: 20, jitter: 0.25, events: 60}
+    content: {uri: /socket, encoding: base64, poll: {dist: uniform, min: 30, max: 50}, resp: {dist: uniform, min: 30, max: 300}}

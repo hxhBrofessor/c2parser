@@ -1,0 +1,28 @@
+title: Mythic C2 http Profile Default User-Agent and URIs
+id: 1cc74d57-3bf3-49c7-a71d-02bcfe6aca59
+status: experimental
+description: 'Detects the default Mythic ''http'' C2 profile: IE11-on-Windows-8.1 User-Agent with GET /index?q=<message> or POST /data (MythicC2Profiles/http builder.go defaults).'
+references:
+    - https://docs.mythic-c2.net/
+    - https://github.com/MythicC2Profiles
+author: c2parser
+date: 2026-10-14
+tags:
+    - attack.command-and-control
+    - attack.t1071
+logsource:
+    category: proxy
+detection:
+    selection_ua:
+        c-useragent: 'Mozilla/5.0 (Windows NT 6.3; Trident/7.0; rv:11.0) like Gecko'
+    selection_get:
+        cs-method: 'GET'
+        c-uri-stem: '/index'
+        c-uri-query|startswith: 'q='
+    selection_post:
+        cs-method: 'POST'
+        c-uri-stem: '/data'
+    condition: selection_ua and (selection_get or selection_post)
+falsepositives:
+    - Unlikely
+level: high

@@ -1,0 +1,18 @@
+# v10a 2.2 synthetic gate: 12 domain-joined workstations logging on through
+# the day (rootDSE, own computer object, gPLink / GPO containers,
+# partitions, and the Group Policy client's SD_FLAGS reads of the GPOs under
+# CN=Policies,CN=System), Kerberos-signed with RRC 12 as Windows sends it.
+# Routine directory traffic: no recon finding.
+name: benign-domain-logon
+seed: 1004
+streams:
+  - label: benign
+    shape: benign=domain-logon
+    transport: ldap
+    server: 10.83.0.10
+    topology: {fleet: {base: 10.83.0.21, n: 12}}
+    timing: {model: poisson, sleep: 5400, events: 6}
+    content: {preset: logon, sasl: krb}
+expect:
+  - {engine: v1, category: any, server: 10.83.0.10, max: 0.19, note: "routine logon LDAP"}
+  - {engine: v2, category: any, server: 10.83.0.10, max: 0.19, note: "routine logon LDAP"}

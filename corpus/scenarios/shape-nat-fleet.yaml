@@ -1,0 +1,12 @@
+# Three clients behind one NAT address: one source IP, three cadences.
+name: shape-nat-fleet
+seed: 209
+streams:
+  - label: benign
+    shape: nat=3
+    transport: https-new-conn
+    server: 198.51.100.73
+    name: telemetry.example
+    topology: {fleet: {base: 192.168.1.10, n: 3}, nat: 10.0.0.1}
+    timing: {model: symmetric, sleep: 300, jitter: 0.3, events: 30}
+    content: {poll: {dist: uniform, min: 500, max: 900}, resp: {min: 120}}

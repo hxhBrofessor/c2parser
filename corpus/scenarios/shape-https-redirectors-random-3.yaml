@@ -1,0 +1,18 @@
+# v9c 2.1 gate: one SNI over 3 redirector IPs (random), new connection per
+# check-in. v2 reports one K1 finding at the true period (60 s), scoring at
+# least the best per-IP finding; no per-IP findings remain.
+name: shape-https-redirectors-random-3
+seed: 308
+streams:
+  - label: c2
+    shape: redirectors=3,mode=random,polarity=shortening
+    transport: https-new-conn
+    server: 203.0.113.20
+    name: static-random.example
+    topology:
+      clients: [10.5.0.37]
+      redirectors: {mode: random, ips: [203.0.113.20, 203.0.113.21, 203.0.113.22]}
+    timing: {model: shortening, sleep: 60, jitter: 0.1, events: 90}
+    content: {poll: {dist: uniform, min: 300, max: 400}, resp: {dist: uniform, min: 100, max: 900}}
+expect:
+  - {engine: v2, server: static-random.example, min: 0.6, evidence: "K1 roll-up"}

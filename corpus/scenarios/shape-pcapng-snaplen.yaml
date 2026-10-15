@@ -1,0 +1,15 @@
+# pcapng at nanosecond resolution with a 96-byte snaplen (orig_len kept).
+name: shape-pcapng-snaplen
+format: pcapng
+tsresol: 9
+snaplen: 96
+seed: 211
+streams:
+  - label: c2
+    shape: polarity=symmetric,snaplen=96
+    transport: https-keepalive
+    server: 198.51.100.75
+    name: sync.example
+    topology: {clients: [10.5.0.33]}
+    timing: {model: symmetric, sleep: 30, jitter: 0.1, events: 60}
+    content: {poll: {min: 120}, resp: {dist: uniform, min: 100, max: 300}}

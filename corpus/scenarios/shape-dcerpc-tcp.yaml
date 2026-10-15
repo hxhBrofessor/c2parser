@@ -1,0 +1,28 @@
+# v10a 2.1: raw-TCP DCE/RPC. A WMI ExecMethod on a dynamic port (BIND
+# seen) is remote execution over tcp; drsuapi on a port learned from an
+# ept_map answer (BIND before the capture) is labelled from the endpoint
+# mapper, and DRSCrackNames is not scored.
+name: shape-dcerpc-tcp
+seed: 1005
+streams:
+  - label: c2
+    shape: rpc=wmi-exec
+    transport: dcerpc-tcp
+    server: 10.84.0.20
+    port: 49712
+    topology: {clients: [10.84.0.5]}
+    timing: {model: poisson, sleep: 600, events: 2}
+    content: {preset: wmi-exec}
+  - label: benign
+    shape: rpc=epm-drsuapi
+    transport: dcerpc-tcp
+    server: 10.84.0.10
+    port: 49668
+    topology: {clients: [10.84.0.6]}
+    timing: {model: poisson, sleep: 600, events: 2}
+    content: {preset: epm-drsuapi}
+expect:
+  - {engine: v1, category: lateral, server: 10.84.0.20, min: 0.6, evidence: "rpc:IWbemServices:ExecMethod"}
+  - {engine: v2, category: lateral, server: 10.84.0.20, min: 0.6, evidence: "rpc:IWbemServices:ExecMethod"}
+  - {engine: v1, category: any, server: 10.84.0.10, max: 0.19, note: "learned drsuapi lookups are not scored"}
+  - {engine: v2, category: any, server: 10.84.0.10, max: 0.19}

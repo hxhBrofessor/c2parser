@@ -1,0 +1,16 @@
+# v9c D2b gate: browser updater (5 h + U(0, 60 s), sometimes 6 h): scheduler
+# shape, capped (< 0.4).
+name: gate-scheduler-browser-updater
+seed: 303
+streams:
+  - label: benign
+    shape: scheduler=browser-updater
+    transport: https-new-conn
+    server: 198.51.100.86
+    name: update.example.com
+    topology: {clients: [10.6.0.17]}
+    timing: {model: chrome, events: 16}
+    content: {poll: {min: 700}, resp: {min: 600}}
+expect:
+  - {engine: v1, server: 198.51.100.86, max: 0.39, evidence: "browser updater"}
+  - {engine: v2, server: 198.51.100.86, max: 0.39, evidence: "browser updater"}

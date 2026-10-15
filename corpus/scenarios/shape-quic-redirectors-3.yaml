@@ -1,0 +1,17 @@
+# v10a 2.3: a QUIC (HTTP/3-shaped) check-in over 3 server IPs with one SNI.
+# The Initial is decrypted (RFC 9001 keys from the DCID), so the SNI
+# keys the K1 series and the three IPs roll up into one v2 finding.
+name: shape-quic-redirectors-3
+seed: 1001
+streams:
+  - label: c2
+    shape: transport=quic,redirectors=3,polarity=shortening
+    transport: quic
+    server: 203.0.113.131
+    name: edge-sync.example
+    topology:
+      clients: [10.81.0.5]
+      redirectors: {mode: random, ips: [203.0.113.131, 203.0.113.132, 203.0.113.133]}
+    timing: {model: shortening, sleep: 60, jitter: 0.1, events: 60}
+expect:
+  - {engine: v2, server: edge-sync.example, min: 0.6, evidence: "K1 roll-up", note: "K1 roll-up by QUIC SNI"}

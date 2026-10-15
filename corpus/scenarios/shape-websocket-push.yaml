@@ -1,0 +1,15 @@
+# Server-push WebSocket (upgrade asks Accept-Type: Push). v9c 2.2: v2
+# classifies it push_or_saas and refuses timing.
+name: shape-websocket-push
+seed: 204
+streams:
+  - label: c2
+    shape: transport=websocket-push
+    transport: websocket-push
+    server: 198.51.100.71
+    name: push.example
+    topology: {clients: [10.5.0.24]}
+    timing: {model: symmetric, sleep: 45, jitter: 0.1, events: 50}
+    content: {uri: /socket, headers: ["Accept-Type: Push"], resp: {dist: uniform, min: 40, max: 120}}
+expect:
+  - {engine: v2, server: 198.51.100.71, evidence: websocket_push_mode}

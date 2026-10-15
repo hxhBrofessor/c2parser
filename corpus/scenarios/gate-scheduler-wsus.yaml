@@ -1,0 +1,18 @@
+# Phase 0.1 gate: single-client benign scheduler model (wsus); the
+# scheduler-shape annotation applies the timing-only cap (< 0.4).
+name: gate-scheduler-wsus
+seed: 132
+streams:
+  - label: benign
+    shape: scheduler=wsus
+    transport: http-keepalive
+    server: 198.51.100.63
+    name: mgmt.example
+    topology: {clients: [10.30.0.5]}
+    timing: {model: wsus, events: 20}
+    content:
+      uri: /checkin
+      headers: ["User-Agent: ManagementAgent/4.2", "Accept: */*", "Accept-Encoding: gzip", "Accept-Language: en-US"]
+expect:
+  - {engine: v1, server: 198.51.100.63, max: 0.39}
+  - {engine: v2, server: 198.51.100.63, max: 0.39}

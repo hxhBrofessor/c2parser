@@ -1,0 +1,17 @@
+# v9c D2c gate: the same WireGuard shape on UDP 53 with non-DNS payloads
+# raises suspicion (a WireGuard C2 transport default): >= 0.4 with
+# wireguard_shape_on_dns_port.
+name: gate-wireguard-dns-port
+seed: 305
+streams:
+  - label: c2
+    shape: wireguard-keepalive,port=53
+    transport: udp
+    server: 198.51.100.80
+    port: 53
+    topology: {clients: [10.6.0.10]}
+    timing: {model: wireguard, events: 200}
+    content: {poll: {min: 32}, resp: {min: 32}}
+expect:
+  - {engine: v1, server: 198.51.100.80, min: 0.4, evidence: wireguard_shape_on_dns_port}
+  - {engine: v2, server: 198.51.100.80, min: 0.4, evidence: wireguard_shape_on_dns_port}

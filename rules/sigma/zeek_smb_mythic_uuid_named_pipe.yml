@@ -1,0 +1,23 @@
+title: UUID-Shaped Named Pipe Opened Over SMB (Mythic smb Profile Default)
+id: 0b00ae2f-fba1-4415-85b0-e89fea259667
+status: experimental
+description: 'Mythic''s smb P2P profile randomises the pipe name to [a-z0-9]{8}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{12}. Windows'' own SMB-reachable pipes are named, not bare UUIDs.'
+references:
+    - https://docs.mythic-c2.net/
+    - https://github.com/MythicC2Profiles
+author: c2parser
+date: 2026-10-14
+tags:
+    - attack.command-and-control
+    - attack.t1071
+logsource:
+    product: zeek
+    service: smb_files
+detection:
+    selection:
+        path|endswith: 'IPC$'
+        name|re: '^[0-9a-z]{8}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{12}$'
+    condition: selection
+falsepositives:
+    - Unlikely
+level: medium

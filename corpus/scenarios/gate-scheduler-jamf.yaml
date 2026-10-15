@@ -1,0 +1,18 @@
+# Phase 0.1 gate: single-client benign scheduler model (jamf); the
+# scheduler-shape annotation applies the timing-only cap (< 0.4).
+name: gate-scheduler-jamf
+seed: 130
+streams:
+  - label: benign
+    shape: scheduler=jamf
+    transport: http-keepalive
+    server: 198.51.100.61
+    name: mgmt.example
+    topology: {clients: [10.30.0.5]}
+    timing: {model: jamf, events: 40}
+    content:
+      uri: /checkin
+      headers: ["User-Agent: ManagementAgent/4.2", "Accept: */*", "Accept-Encoding: gzip", "Accept-Language: en-US"]
+expect:
+  - {engine: v1, server: 198.51.100.61, max: 0.39}
+  - {engine: v2, server: 198.51.100.61, max: 0.39}

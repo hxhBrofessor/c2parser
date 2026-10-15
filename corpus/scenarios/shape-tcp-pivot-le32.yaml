@@ -1,0 +1,11 @@
+name: shape-tcp-pivot-le32
+seed: 205
+streams:
+  - label: c2
+    shape: transport=tcp-pivot,framing=le32
+    transport: tcp-pivot
+    server: 10.5.0.31
+    port: 8443
+    topology: {clients: [10.5.0.25]}
+    timing: {model: fixed, sleep: 5, events: 100}
+    content: {framing: le32, poll: {dist: uniform, min: 16, max: 32}, resp: {dist: uniform, min: 16, max: 64}}
