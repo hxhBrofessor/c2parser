@@ -101,3 +101,11 @@ make release    # binaries for macOS (arm64/amd64), Linux and Windows in dist/
 ```
 
 Lab-capture tests skip unless `C2PARSER_TESTDATA` points at a directory of captures. Captures never belong in this repo. The synthetic test corpus lives in `corpus/scenarios/` (see [`docs/corpus.md`](docs/corpus.md)).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+MIT — see [LICENSE](LICENSE). Third-party components: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
