@@ -1,6 +1,6 @@
 # c2parser v11a review — neutral C2 catch-all layer
 
-_2026-10-17. Implements `v11a-engineering-prompt.md` on `feature/v11-cyberglm` (base: v10.0, `7620c51`). No tag: v11.0 is tagged after v11b. Each item lists spec → what the tree showed → resolution → evidence. Numbers are from local runs (darwin/arm64, Go 1.27.2). Anything that needs the lab captures is listed under "Not verified here" and is **not** claimed as passed._
+_2026-10-17. Documents the v11a engineering review based on v10.0. No v11a tag or release has been published; v11.0 is planned after v11b. Each item lists spec → observed behavior → resolution → evidence. Results are from local Darwin/arm64 runs with Go 1.27.2. Lab-dependent claims are under "Not verified here" and are **not** claimed as passed._
 
 > **D01 correction (2026-10-18):** This is a historical engineering review,
 > not current release acceptance. The original N1 decoder-precedence account
@@ -104,10 +104,10 @@ Evidence: `residue_test.go` (classes ≡0/≡4/≡12 mod 16, ≡4 mod 8, uniform
 
 - **J-E1 APPROVED — scoped interpretation only:** `shape-carrier-words` v2, 0.84 High → 0.94 Critical, and `shape-residue-http-12` v1, 0.64 Medium → 0.82 High. These two v11a-added scenarios are excluded from the v10-only comparison set; this does not authorize other crossings.
 - **J-E2 APPROVED — scoped exceptions only:** `shape-smb-pipe-framed` v1, 0.74 High → 0.91 Critical, and v2, 0.62 Medium → 0.81 High. No other existing-scenario crossing is approved.
-- **Gate B NOT_APPLICABLE:** the human owner states that no NetSupport sample will be provided. The conditional test was not run; this is not a test pass and no substitute sample is used.
-- **Gate A WAIVED / UNVERIFIED — HUMAN OWNER (2026-10-19; v11a only):** the four prescribed authentic captures (`http_c2_enum`, `http_c2_enum…part2`, `smb2-data`, `smb2-wks`) and exact filenames/provenance were unavailable. The 16 core lab executions, related transforms, and v10 Critical-preservation comparison were NOT RUN. The waiver is not a PASS and does not extend to v11b or formal v11.0 planning.
+- **Gate B NOT_APPLICABLE:** the owner states that no NetSupport sample will be provided. This is not a test pass and no substitute sample is used.
+- **Gate A WAIVED / UNVERIFIED — HUMAN OWNER (v11a only; 2026-10-19):** the human owner explicitly waived this milestone's lab requirement. The named inputs were `http_c2_enum`, `http_c2_enum…part2`, `smb2-data` and `smb2-wks`; exact filenames and provenance are unavailable. The 16 core capture/engine/Sigma combinations, related recon/RPC/transform checks, and v10 Critical-preservation comparison are NOT RUN / UNVERIFIED, not PASS. The waiver does not extend to v11b or formal v11.0 planning.
 - **Gate G CANDIDATE VERIFIED:** candidate CLI version `11a` and the four reproducible target builds are verified; this is candidate readiness only.
-- **Release HOLD:** no formal release authorization has been given.
+- **Publication HOLD:** a local candidate package may be staged for owner review; no Git tag, GitHub Release, upload, deployment or formal publication authorization is included here.
 
 ## Historical verification gates (pre-remediation review evidence; not current release acceptance)
 
@@ -127,10 +127,12 @@ Evidence: `residue_test.go` (classes ≡0/≡4/≡12 mod 16, ≡4 mod 8, uniform
 
 ## Not verified here
 
-- **Gate A lab evidence (WAIVED / UNVERIFIED for v11a only):** `C2PARSER_TESTDATA` and the four prescribed captures (`http_c2_enum`, `http_c2_enum…part2`, `smb2-data`, `smb2-wks`) with exact filenames/provenance were unavailable. The 16 core lab executions, related recon/RPC/transform checks, and v10 Critical-preservation comparison are **NOT RUN**. Synthetic and six public-PCAP studies are supplemental, not substitutes. Residual risk remains for regressions and false positives on the prescribed lab traffic and transforms; this waiver does not extend to v11b or formal v11.0 planning. Highest-risk paths include response carriers on WinRM/WSUS HTTP, `length_residue` on Havoc HTTP/pipe, `uri_shape:*` polling and the Havoc `gainz` pipe (a synthetic pipe stands in).
+- **Gate A residual risk:** the four prescribed authentic inputs (`http_c2_enum`, `http_c2_enum…part2`, `smb2-data`, `smb2-wks`) were unavailable; exact filenames and provenance were not established. `TestCapture*` 16/16, `TestLabTransforms`, related recon/RPC/transform checks, and unchanged v10 lab Critical findings are NOT RUN / UNVERIFIED. The human-owner waiver applies only to v11a; these checks were not passed. Residual risk is undetected regressions or false positives on those traffic sets and their transforms. Highest-risk lab paths: response carriers on WinRM/WSUS HTTP, `length_residue` on Havoc HTTP/pipe, `uri_shape:*` on any 4-char or `/<word>.<ext>` polling, and the Havoc `gainz` pipe (a synthetic Havoc pipe stands in).
+- **Supplemental public traffic:** the campaign covered six PCAPs and 36 runs, including the user-supplied QakBot-labeled case. QakBot used `-min-score 0.2`; supported-protocol relevance remains UNKNOWN. These observations do not replace Gate A, establish family attribution, or provide precision/recall.
+- **NetSupport:** NOT_APPLICABLE by human-owner decision because no sample will be supplied; this is not a test PASS.
 - Sliver source provenance: a local snapshot is now available under `_reference-sources/sliver/`, but its ZIP commit identity is unverified. The snapshot supports only narrowly cited static facts; synthetic model assumptions and cross-version equivalence remain unverified.
 - The Linux `TestScaleFlowHeavy` RSS gate.
-- Gate G candidate: the `11a` four-target binaries and candidate review evidence are verified and preserved outside the repository; they are candidate artifacts only. No v11a release or tag is published; formal `v11.0` remains deferred until after v11b.
+- Public v11a release archive, release binaries and tag: not published. Four candidate binaries and a candidate review evidence ZIP are preserved locally for owner review only; they are not public release assets.
 
 ## Follow-ups
 
