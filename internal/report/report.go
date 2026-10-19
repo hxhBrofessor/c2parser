@@ -39,6 +39,17 @@ func JSON(w io.Writer, results []*engine.Result, o Options) error {
 	return enc.Encode(filtered)
 }
 
+// CandidateJSON writes the opt-in alternate-decoding sidecar. It is a
+// separate schema and never augments the established result JSON.
+func CandidateJSON(w io.Writer, reports []engine.DecodeCandidateReport) error {
+	if reports == nil {
+		reports = []engine.DecodeCandidateReport{}
+	}
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(reports)
+}
+
 // Text writes an analyst-oriented report.
 func Text(w io.Writer, r *engine.Result, o Options) {
 	c := r.Counters

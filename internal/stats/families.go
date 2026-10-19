@@ -27,8 +27,7 @@ func FamilyOf(name string) string {
 // Unmapped reports whether a signal has no named family (v10a.1 D2). Such
 // signals still score as their own family; ReportedFamilyScores groups
 // them under UnmappedFamily so calibration sees them as one, labelled set
-// rather than as many silent single-signal families. Mapping them is
-// v10c's calibration work.
+// rather than as many silent single-signal families.
 func Unmapped(name string) bool {
 	_, ok := familyOf(name)
 	return !ok
@@ -37,6 +36,11 @@ func Unmapped(name string) bool {
 // UnmappedFamily is the family_scores key for signals with no named family.
 const UnmappedFamily = "unmapped"
 
+// FixedURITimingFamily maps uri_shape:fixed-uri to the timing family so a
+// fixed-URI shape rides inside the timing-only cap (v11a N2). Var so the
+// mutation test can prove the cap depends on the mapping.
+var FixedURITimingFamily = true
+
 func familyOf(name string) (string, bool) {
 	switch {
 	case name == "hdr:ua_c2_default", strings.HasPrefix(name, "default_profile:"), name == "c2_default_certificate",
@@ -44,11 +48,28 @@ func familyOf(name string) (string, bool) {
 		return "default_profile", true
 	case strings.HasPrefix(name, "hdr:ua_"):
 		return "ua", true
-	case name == "hdr:invalid_request_content_type", name == "hdr:post_to_ip_literal", name == "hdr:no_cache_post":
-		// correlated quirks of one client implementation (v8a review #5)
+	case name == "hdr:invalid_request_content_type", name == "hdr:post_to_ip_literal", name == "hdr:no_cache_post",
+		strings.HasPrefix(name, "uri_shape:") && name != "uri_shape:fixed-uri":
+		// correlated quirks of one client implementation (v8a review #5);
+		// URI shapes are the same class of structural client habit (v11a N2)
+		return "http_client_quirks", true
+	case name == "uri_shape:fixed-uri":
+		// One URI repeated on a beacon describes the *timing* shape, not the
+		// payload; it must not lift a fleet/poller/scheduler-capped beacon
+		// above its cap (v11a N2), so it rides the timing family.
+		if FixedURITimingFamily {
+			return "timing", true
+		}
 		return "http_client_quirks", true
 	case name == "random_payloads", name == "legacy_entropy_threshold", name == "random_pipe_data", name == "random_ws_payloads":
 		return "payload_randomness", true
+	case strings.HasPrefix(name, "encoded_payload_in_"), name == "sig:mythic-agent-message",
+		name == "mythic_message_in_pipe", name == "pivot_frame_header", name == "length_residue":
+		// structural payload evidence — *what* carries the data and how it is
+		// framed — as distinct from entropy (payload_randomness), which says
+		// how random it looks (v11a). These sat unmapped in v10 (each its
+		// own family); one family only reduces their combined lift.
+		return "payload_shape", true
 	case name == "beacon_timing", strings.HasPrefix(name, "timing_"):
 		return "timing", true
 	case strings.HasPrefix(name, "cert_"), name == "self_signed_certificate", name == "fresh_certificate",

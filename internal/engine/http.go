@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"net/netip"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -53,11 +54,14 @@ type httpMsg struct {
 	bodyLen   int64
 	hist      stats.Histogram
 	head      []byte
+	words     *bodyWords // v11a F03: streamed word-run decoding of a response body
+	wordsDone bool       // v11a F03: admission decided (words set, or rejected)
 	chunked   bool
 	truncated bool
 }
 
 func (m *httpMsg) addBody(b []byte) {
+	prev := m.bodyLen
 	m.bodyLen += int64(len(b))
 	m.hist.Add(b)
 	if room := headSample - len(m.head); room > 0 {
@@ -65,6 +69,29 @@ func (m *httpMsg) addBody(b []byte) {
 			room = len(b)
 		}
 		m.head = append(m.head, b[:room]...)
+	}
+	if m.req || len(b) == 0 || !streamBodyWords {
+		return
+	}
+	// v11a remediation F03: bounded streaming word-run decoder for
+	// response bodies. Admission looks at the first wordPrefixLen body
+	// bytes whatever the TCP segment / chunk boundaries: while pending,
+	// every earlier body byte is still in m.head (prev < wordPrefixLen ≤
+	// headSample), so on admission they are replayed exactly once, then
+	// this fragment. Nothing beyond the retained head is ever buffered.
+	switch {
+	case m.words != nil:
+		m.words.add(b)
+	case !m.wordsDone:
+		switch wordPrefix(m.head) {
+		case admitYes:
+			m.words = &bodyWords{}
+			m.words.add(m.head[:prev])
+			m.words.add(b)
+			m.wordsDone = true
+		case admitNo:
+			m.wordsDone = true
+		}
 	}
 }
 
@@ -459,6 +486,13 @@ type httpChannel struct {
 	fileUploads         []fileUpload
 	ws                  *wsStats
 	carriers            map[string]*carrierStats
+	reqCarriers         int            // request locations in carriers (budget maxReqCarriers)
+	respCarriers        int            // response locations in carriers (budget maxRespCarriers)
+	candidateRecords    int            // opt-in decode-candidate sidecar budget
+	candidateBytes      int            // opt-in decoded-byte budget
+	shapes              *uriShapeStats // v11a N2, allocated on first shape hit
+	residue             *residuePair   // v11a M2, allocated at the second eligible message
+	residueFirst        residueFirst   // v11a F06: first eligible length per direction
 	respAnoms           map[string]int
 	respAnomDetail      map[string]string
 	notable             []NotableMessage
@@ -587,9 +621,10 @@ func (e *Engine) onHTTPMessage(c *tcpConn, m *httpMsg) {
 	if n := mythicInText(m.head); n > 0 {
 		sigs = append(sigs, signature{Name: "mythic-agent-message", Kind: "c2", Weight: 0.97})
 	}
-	if m.req {
-		e.analyseCarriers(ch, m)
-	} else if sv := m.hdr["server"]; sv != "" {
+	e.analyseCarriers(ch, m)
+	ch.noteURIShape(c, m)
+	ch.noteHTTPResidue(m, opaque)
+	if sv := m.hdr["server"]; !m.req && sv != "" {
 		if why, ok := c2DefaultServers[sv]; ok {
 			if ch.respAnoms == nil {
 				ch.respAnoms, ch.respAnomDetail = map[string]int{}, map[string]string{}
@@ -659,8 +694,8 @@ func detectUpload(m *httpMsg) (fileUpload, bool) {
 
 type anomaly struct{ name, detail string }
 
-// Default User-Agents shipped by common C2 frameworks. Operators can change
-// these, but plenty don't.
+// User-Agent strings treated as C2 hints by this detector; labels below are
+// configured heuristic attributions, not universal defaults.
 var c2DefaultUAs = map[string]string{
 	"Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36": "Havoc default",
 	"Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko":                                          "PowerShell Empire default",
@@ -669,7 +704,8 @@ var c2DefaultUAs = map[string]string{
 	merlinUA:   "Merlin agent default",
 }
 
-// Default response headers of C2 listeners (server-side profile configs).
+// Response Server values treated as C2 hints by this detector; listed labels
+// are heuristic attributions, not universal defaults.
 var c2DefaultServers = map[string]string{
 	"NetDNA-cache/2.2": "Mythic http profile default server header",
 }
@@ -729,50 +765,133 @@ func (e *Engine) requestAnomalies(m *httpMsg) []anomaly {
 
 func round2(x float64) float64 { return math.Round(x*100) / 100 }
 
-// analyseCarriers decodes every request token and tracks, per location,
-// how often it carries fresh random data or a Mythic message.
+// Location budgets per channel: request locations keep the v10 budget of
+// 24; response locations (v11a N1) get their own 8 so they can never
+// crowd a request location out.
+const (
+	maxReqCarriers  = 24
+	maxRespCarriers = 8
+)
+
+// decoded is one token's decoding.
+type decoded struct {
+	b             []byte
+	enc, pre, suf string
+	run           string           // the encoded run (token minus wrapper)
+	words         *stats.Histogram // streamed word-run body (F03): decoded-byte histogram
+}
+
+// decodeCarrier decodes one carrier token. Request tokens are
+// query-unescaped as in v10; response tokens are not. A response body
+// whose streamed word-run decoder accepted the whole body (F03) decodes
+// as "english" from the stream, which saw every body byte.
+func decodeCarrier(m *httpMsg, t token) decoded {
+	v := t.val
+	if m.req {
+		if u, err := url.QueryUnescape(v); err == nil {
+			v = u
+		}
+	} else if t.loc == "resp:body" && m.words != nil {
+		if h, ok := m.words.result(); ok {
+			return decoded{enc: "english", words: h}
+		}
+	}
+	b, enc, pre, suf := decodeUnescaped(v)
+	return decoded{b: b, enc: enc, pre: pre, suf: suf}
+}
+
+func (d decoded) assess() stats.Assessment {
+	if d.words != nil {
+		return stats.Assess(d.words)
+	}
+	return stats.AssessBytes(d.b)
+}
+
+// streamBodyWords enables the streamed word-run body decoder (F03;
+// mutation hook).
+var streamBodyWords = true
+
+// carrierResponses enables response carriers (v11a N1; mutation hook).
+var carrierResponses = true
+
+// analyseCarriers decodes every request and response token and tracks, per
+// location, how often it carries fresh random data or matches the UUID-prefix
+// message heuristic.
 func (e *Engine) analyseCarriers(ch *httpChannel, m *httpMsg) {
+	var toks []token
+	if m.req {
+		toks = requestTokens(m)
+	} else if carrierResponses {
+		toks = responseTokens(m)
+	}
+	e.collectCandidates(ch, m, toks)
 	seenLoc := map[string]bool{}
-	for _, t := range requestTokens(m) {
+	for _, t := range toks {
 		loc := t.loc
 		cs := ch.carriers[loc]
+		d := decodeCarrier(m, t)
 		if cs == nil {
-			if len(ch.carriers) >= 24 {
+			if m.req && ch.reqCarriers >= maxReqCarriers || !m.req && ch.respCarriers >= maxRespCarriers {
 				continue
 			}
-			cs = &carrierStats{values: map[string]bool{}, encs: map[string]int{}}
+			// A response location is created by its first token that
+			// decodes (or matches the UUID-prefix message heuristic): ordinary pages and
+			// one-shot responses allocate nothing (flow-heavy memory).
+			if !m.req && d.enc == "raw" && !isMythicMessage(d.b) {
+				continue
+			}
+			cs = &carrierStats{values: map[string]bool{}, encs: map[string]int{}, resp: !m.req}
 			if ch.carriers == nil {
 				ch.carriers = map[string]*carrierStats{}
 			}
 			ch.carriers[loc] = cs
+			if m.req {
+				ch.reqCarriers++
+			} else {
+				ch.respCarriers++
+			}
 		}
 		if !seenLoc[loc] {
 			cs.requests++
 			seenLoc[loc] = true
 		}
-		fresh := !cs.values[t.val]
+		key := valueKey(cs.resp, t.val)
+		fresh := !cs.values[key]
 		if fresh && len(cs.values) < 5000 {
-			cs.values[strings.Clone(t.val)] = true // don't pin the header block
+			cs.values[strings.Clone(key)] = true // don't pin the header block
 		}
-		a, enc, dec := tokenAssessment(t.val)
-		cs.encs[enc]++
-		if fresh && a.Score >= 0.8 && a.N >= 24 {
+		a := d.assess()
+		cs.encs[d.enc]++
+		if d.enc != "raw" {
+			cs.noteWrapper(d.pre, d.suf)
+		}
+		random := fresh && a.Score >= 0.8 && a.N >= 24
+		// F02: a run inside document syntax is a field value of a
+		// structured response, counted apart (see scoreCarriers).
+		structural := t.loc == "resp:body" && d.enc != "raw" && isStructural(d.pre, d.suf)
+		// Response tokens count only when they decoded: a raw random
+		// body is random_payloads' evidence, not a carrier's.
+		switch {
+		case !random || cs.resp && d.enc == "raw":
+		case structural:
+			cs.structRandom++
+		default:
 			cs.random++
-			if cs.example == "" {
-				cs.example = strings.Clone(t.val)
-				if len(cs.example) > 60 {
-					cs.example = cs.example[:60] + "…"
-				}
+		}
+		if random && !(cs.resp && d.enc == "raw") && cs.example == "" {
+			cs.example = strings.Clone(t.val)
+			if len(cs.example) > 60 {
+				cs.example = cs.example[:60] + "…"
 			}
 		}
-		if isMythicMessage(dec) {
+		if isMythicMessage(d.b) {
 			cs.mythic++
 		}
 	}
 }
 
-// wsPushHeader: the WebSocket upgrade asks for server-push mode
-// ("Accept-Type: Push", Mythic websocket profile push mode; v9c 2.2).
+// wsPushHeader recognizes a case-insensitive "push" token in this header;
+// that token alone does not identify a profile.
 func wsPushHeader(v string) bool {
 	for _, p := range strings.Split(v, ",") {
 		if strings.EqualFold(strings.TrimSpace(p), "push") {

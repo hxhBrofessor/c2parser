@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"math"
 	"os"
@@ -30,6 +31,55 @@ func corpusScenarios(t *testing.T) []*sy.Scenario {
 		out = append(out, sc)
 	}
 	return out
+}
+
+// Candidate collection is opt-in and must preserve every existing primary
+// result across the entire scenario corpus and both engine modes.
+func TestCandidateModePreservesCorpusPrimaryOutputs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("corpus candidate compatibility run")
+	}
+	scenarios := corpusScenarios(t)
+	if len(scenarios) != 45 {
+		t.Fatalf("corpus has %d scenarios; expected 45", len(scenarios))
+	}
+	for _, sc := range scenarios {
+		t.Run(sc.Name, func(t *testing.T) {
+			var buf bytes.Buffer
+			if _, err := sy.Generate(sc, &buf); err != nil {
+				t.Fatal(err)
+			}
+			ext := ".pcap"
+			if sc.Format == "pcapng" {
+				ext = ".pcapng"
+			}
+			path := filepath.Join(t.TempDir(), sc.Name+ext)
+			if err := os.WriteFile(path, buf.Bytes(), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			for _, cfg := range []Config{{}, {TimingV2: true}} {
+				before, err := AnalyzeFile(path, cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				after, _, err := AnalyzeFileWithCandidates(path, cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				b1, err := json.Marshal(before)
+				if err != nil {
+					t.Fatal(err)
+				}
+				b2, err := json.Marshal(after)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(b1, b2) {
+					t.Fatalf("candidate collection changed primary output (TimingV2=%v)", cfg.TimingV2)
+				}
+			}
+		})
+	}
 }
 
 // analyzeScenario generates sc and runs the engine on it.

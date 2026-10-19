@@ -1,7 +1,9 @@
+
 # build output
 /c2parser
 /c2parser.exe
 /dist/
+/build
 *.test
 *.out
 
@@ -17,3 +19,20 @@ eval-out/
 .DS_Store
 .idea/
 .vscode/
+
+# local protocol reference snapshots (F08)
+/reference-sources/
+/_reference-sources/
+
+# AI review evidence and temporary workspaces
+/.local/
+
+# original engineering prompts and reference materials
+/1-new-buildout/
+
+# local configuration and credentials
+.env
+.env.*
+*.pem
+*.key
+*.p12

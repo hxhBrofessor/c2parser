@@ -10,3 +10,7 @@ streams:
     topology: {clients: [10.5.0.22]}
     timing: {model: lengthening, sleep: 10, jitter: 0.3, events: 60}
     content: {header: "c0ffee01", residue: "4", poll: {dist: uniform, min: 20, max: 60}, resp: {dist: uniform, min: 20, max: 400}}
+# v11a N3: the invented header c0ffee01 is an unknown constant frame header.
+expect:
+  - {engine: v1, server: 10.5.0.30, category: any, min: 0.65, evidence: pivot_frame_header}
+  - {engine: v2, server: 10.5.0.30, category: any, min: 0.65, evidence: pivot_frame_header}

@@ -1,0 +1,26 @@
+# v11a N2 cap gate: 3 internal clients polling /updates.rss on the same
+# cadence (a fleet pattern). uri_shape:word-dot-ext (http_client_quirks,
+# non-timing) fires in both engines and must not lift the fleet cap: the
+# timing+URI-shape guard keeps it < 0.4 (TestURIShapeCapMutations).
+name: gate-fleet3-http-word-dot-ext
+seed: 312
+streams:
+  - label: benign
+    shape: fleet=3,uri=word-dot-ext
+    transport: http-keepalive
+    server: 198.51.100.112
+    name: feeds.example
+    topology: {fleet: {base: 10.50.2.11, n: 3}, stagger: 7}
+    timing: {model: shortening, sleep: 60, jitter: 0.1, events: 60}
+    content:
+      method: GET
+      uri: /updates.rss
+      encoding: text
+      headers: ["User-Agent: feed-reader/1.4", "Accept: application/rss+xml"]
+      poll: {dist: fixed, min: 0}
+      resp: {dist: uniform, min: 200, max: 400}
+expect:
+  - {engine: v1, server: 198.51.100.112, client: 10.50.2.11, max: 0.39, evidence: "uri_shape:word-dot-ext"}
+  - {engine: v2, server: 198.51.100.112, client: 10.50.2.11, max: 0.39, evidence: "uri_shape:word-dot-ext"}
+  - {engine: v1, server: 198.51.100.112, client: 10.50.2.13, max: 0.39}
+  - {engine: v2, server: 198.51.100.112, client: 10.50.2.13, max: 0.39}

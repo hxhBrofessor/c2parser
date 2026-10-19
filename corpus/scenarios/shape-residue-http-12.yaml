@@ -1,0 +1,24 @@
+# v11a M2: HTTP POST channel whose base64 bodies decode to random bytes
+# with lengths ≡ 12 (mod 16) in both directions (AEAD-style framing).
+# length_residue measures the class; the class is not attributed.
+name: shape-residue-http-12
+seed: 321
+streams:
+  - label: c2
+    shape: transport=http,encoding=base64,residue=12
+    transport: http-keepalive
+    server: 198.51.100.121
+    name: telemetry-sync.example
+    topology: {clients: [10.5.0.51]}
+    timing: {model: symmetric, sleep: 45, jitter: 0.4, events: 50}
+    content:
+      method: POST
+      uri: /api/sync
+      encoding: base64
+      residue: "12"
+      headers: ["User-Agent: sync-client/5.1", "Content-Type: text/plain"]
+      poll: {dist: uniform, min: 40, max: 200}
+      resp: {dist: uniform, min: 60, max: 300}
+expect:
+  - {engine: v1, server: 198.51.100.121, min: 0.4, evidence: length_residue}
+  - {engine: v2, server: 198.51.100.121, min: 0.4, evidence: length_residue}

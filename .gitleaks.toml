@@ -1,0 +1,4 @@
+title = "c2parser secret scanning"
+
+[extend]
+useDefault = true

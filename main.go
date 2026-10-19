@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -39,38 +40,39 @@ func run(args []string) int {
 	}
 	fs := flag.NewFlagSet("c2parser", flag.ContinueOnError)
 	var (
-		asJSON    = fs.Bool("json", false, "emit JSON instead of the text report")
-		verbose   = fs.Bool("v", false, "verbose: include per-protocol tables and weak signals")
-		minScore  = fs.Float64("min-score", 0.2, "hide findings scoring below this (0..1)")
-		internal  = fs.String("internal", strings.Join(engine.DefaultInternal, ","), "comma-separated CIDRs treated as internal")
-		addInt    = fs.String("add-internal", "", "extra internal CIDRs appended to -internal (e.g. 100.64.0.0/10 for Tailscale)")
-		legacy    = fs.Float64("entropy", 7.80, "legacy raw Shannon threshold reported alongside the new randomness score")
-		exfilHalf = fs.String("exfil-bytes", "1MB", "upload volume that earns half credit in the exfil score")
-		exfilMin  = fs.String("exfil-min", "256KB", "ignore channels uploading less than this")
-		burstGap  = fs.Duration("burst-gap", 250*time.Millisecond, "client silence that ends one beacon burst")
-		minBeacon = fs.Int("min-beacon", 8, "minimum events before timing is scored")
-		dnsAllow  = fs.String("dns-allow", "", "comma-separated domains to exclude from DNS tunnel scoring")
-		allPairs  = fs.Bool("all-pairs", false, "also score internal↔internal pairs for beaconing/exfil")
-		failOn    = fs.String("fail-on", "", "exit 2 if any finding reaches this severity (low|medium|high|critical)")
-		sigmaDirs = fs.String("sigma", "", "extra Sigma rule files/directories (comma-separated), added to the auto-updated SigmaHQ set")
-		sigmaList = fs.Bool("sigma-report", false, "print which Sigma rules loaded/skipped and why, then continue")
-		noSigma   = fs.Bool("no-sigma", false, "disable Sigma rules entirely")
-		noAuto    = fs.Bool("no-sigma-update", false, "don't auto-update SigmaHQ rules (use the cache and built-in rules)")
-		updSigma  = fs.Bool("update-sigma", false, "check SigmaHQ for new rules now (like nuclei -ut); with no captures, update and exit")
-		offline   = fs.Bool("offline", false, "never touch the network; use cached + built-in rules")
-		sigRef    = fs.String("sigma-ref", "", "pin SigmaHQ to a branch, tag or commit SHA (default: latest default branch)")
-		sigRepo   = fs.String("sigma-repo", "SigmaHQ/sigma", "GitHub owner/repo to pull Sigma rules from (e.g. your fork)")
-		sigCache  = fs.String("sigma-cache", "", "Sigma cache directory (default: user cache dir/c2parser/sigma)")
-		sigMaxAge = fs.Duration("sigma-max-age", 24*time.Hour, "how often the auto-update checks GitHub")
-		timing    = fs.String("timing", "v1", "timing/scoring engine: v1 (default, v6 behaviour) or v2 (v8: event models, refusal ladder, null-calibrated dispersion, name-keyed series, signal families)")
-		showVer   = fs.Bool("version", false, "print the version and exit")
-		jobs      = fs.Int("j", 1, "analyse up to N capture files concurrently (memory ≈ N × per-file peak); output stays in argument order")
-		maxEvents = fs.Int("max-series-events", 200000, "cap on stored events per timing series (dropped events are counted in series_events_dropped)")
-		maxRows   = fs.Int("max-summary-rows", 5000, "cap on rows per summary table (http_channels, dns_domains); findings are unaffected")
-		leanGC    = fs.Int("lean-gc-mb", 512, "above this live heap (MB), collect garbage more often to cut peak memory (0 = off)")
-		dcList    = fs.String("dc", "", "comma-separated domain controller IPs (added to those inferred from Kerberos/LDAP service and drsuapi): their replication is not DCSync and their LDAP/samr is not recon")
-		_         = fs.Bool("no-banner", false, "don't print the startup banner (it only shows on an interactive terminal; also C2PARSER_NO_BANNER=1)")
-		iocFile   = fs.String("ioc", "", "file of indicators, one per line: ip:, domain:, ja3:, ja3s:, ja4:, cert: (sha256) — or bare values; '#' starts a label")
+		asJSON        = fs.Bool("json", false, "emit JSON instead of the text report")
+		candidateJSON = fs.String("candidate-json", "", "write bounded, unconfirmed Base32/Base58 candidates to a separate JSON file")
+		verbose       = fs.Bool("v", false, "verbose: include per-protocol tables and weak signals")
+		minScore      = fs.Float64("min-score", 0.2, "hide findings scoring below this (0..1)")
+		internal      = fs.String("internal", strings.Join(engine.DefaultInternal, ","), "comma-separated CIDRs treated as internal")
+		addInt        = fs.String("add-internal", "", "extra internal CIDRs appended to -internal (e.g. 100.64.0.0/10 for Tailscale)")
+		legacy        = fs.Float64("entropy", 7.80, "legacy raw Shannon threshold reported alongside the new randomness score")
+		exfilHalf     = fs.String("exfil-bytes", "1MB", "upload volume that earns half credit in the exfil score")
+		exfilMin      = fs.String("exfil-min", "256KB", "ignore channels uploading less than this")
+		burstGap      = fs.Duration("burst-gap", 250*time.Millisecond, "client silence that ends one beacon burst")
+		minBeacon     = fs.Int("min-beacon", 8, "minimum events before timing is scored")
+		dnsAllow      = fs.String("dns-allow", "", "comma-separated domains to exclude from DNS tunnel scoring")
+		allPairs      = fs.Bool("all-pairs", false, "also score internal↔internal pairs for beaconing/exfil")
+		failOn        = fs.String("fail-on", "", "exit 2 if any finding reaches this severity (low|medium|high|critical)")
+		sigmaDirs     = fs.String("sigma", "", "extra Sigma rule files/directories (comma-separated), added to the auto-updated SigmaHQ set")
+		sigmaList     = fs.Bool("sigma-report", false, "print which Sigma rules loaded/skipped and why, then continue")
+		noSigma       = fs.Bool("no-sigma", false, "disable Sigma rules entirely")
+		noAuto        = fs.Bool("no-sigma-update", false, "don't auto-update SigmaHQ rules (use the cache and built-in rules)")
+		updSigma      = fs.Bool("update-sigma", false, "check SigmaHQ for new rules now (like nuclei -ut); with no captures, update and exit")
+		offline       = fs.Bool("offline", false, "never touch the network; use cached + built-in rules")
+		sigRef        = fs.String("sigma-ref", "", "pin SigmaHQ to a branch, tag or commit SHA (default: latest default branch)")
+		sigRepo       = fs.String("sigma-repo", "SigmaHQ/sigma", "GitHub owner/repo to pull Sigma rules from (e.g. your fork)")
+		sigCache      = fs.String("sigma-cache", "", "Sigma cache directory (default: user cache dir/c2parser/sigma)")
+		sigMaxAge     = fs.Duration("sigma-max-age", 24*time.Hour, "how often the auto-update checks GitHub")
+		timing        = fs.String("timing", "v1", "timing/scoring engine: v1 (default, v6 behaviour) or v2 (v8: event models, refusal ladder, null-calibrated dispersion, name-keyed series, signal families)")
+		showVer       = fs.Bool("version", false, "print the version and exit")
+		jobs          = fs.Int("j", 1, "analyse up to N capture files concurrently (memory ≈ N × per-file peak); output stays in argument order")
+		maxEvents     = fs.Int("max-series-events", 200000, "cap on stored events per timing series (dropped events are counted in series_events_dropped)")
+		maxRows       = fs.Int("max-summary-rows", 5000, "cap on rows per summary table (http_channels, dns_domains); findings are unaffected")
+		leanGC        = fs.Int("lean-gc-mb", 512, "above this live heap (MB), collect garbage more often to cut peak memory (0 = off)")
+		dcList        = fs.String("dc", "", "comma-separated domain controller IPs (added to those inferred from Kerberos/LDAP service and drsuapi): their replication is not DCSync and their LDAP/samr is not recon")
+		_             = fs.Bool("no-banner", false, "don't print the startup banner (it only shows on an interactive terminal; also C2PARSER_NO_BANNER=1)")
+		iocFile       = fs.String("ioc", "", "file of indicators, one per line: ip:, domain:, ja3:, ja3s:, ja4:, cert: (sha256) — or bare values; '#' starts a label")
 	)
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "usage: c2parser [flags] <capture.pcap|.pcapng> [...]\n\n")
@@ -86,6 +88,45 @@ func run(args []string) int {
 	if fs.NArg() == 0 && !*updSigma {
 		fs.Usage()
 		return 64
+	}
+	var candidateProtected []os.FileInfo
+	if *candidateJSON != "" {
+		protectedPaths := append([]string(nil), fs.Args()...)
+		if *iocFile != "" {
+			protectedPaths = append(protectedPaths, *iocFile)
+		}
+		if *sigmaDirs != "" {
+			protectedPaths = append(protectedPaths, strings.Split(*sigmaDirs, ",")...)
+		}
+		if !*noSigma {
+			cache := *sigCache
+			if cache == "" {
+				base, err := os.UserCacheDir()
+				if err != nil {
+					fmt.Fprintln(os.Stderr, "error: candidate JSON destination safety: cannot resolve Sigma cache:", err)
+					return 64
+				}
+				cache = filepath.Join(base, "c2parser", "sigma")
+			}
+			if _, err := os.Stat(cache); err == nil {
+				protectedPaths = append(protectedPaths, cache)
+			} else if !os.IsNotExist(err) {
+				fmt.Fprintln(os.Stderr, "error: candidate JSON destination safety: cannot inspect Sigma cache:", err)
+				return 64
+			}
+		}
+		var err error
+		candidateProtected, err = candidateProtectedFiles(protectedPaths, os.Stdout, os.Stderr)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error: candidate JSON destination safety:", err)
+			return 64
+		}
+		destination, err := openCandidateDestination(*candidateJSON, candidateProtected)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error: candidate JSON destination safety:", err)
+			return 64
+		}
+		destination.close()
 	}
 	if *timing != "v1" && *timing != "v2" {
 		fmt.Fprintln(os.Stderr, "error: -timing must be v1 or v2")
@@ -171,14 +212,24 @@ func run(args []string) int {
 	engine.LeanGCBytes = uint64(*leanGC) << 20
 
 	var results []*engine.Result
+	var candidateReports []engine.DecodeCandidateReport
 	status := 0
-	for _, r := range analyzeAll(fs.Args(), cfg, *jobs) {
+	var files []fileResult
+	if *candidateJSON != "" {
+		files = analyzeAllWithCandidates(fs.Args(), cfg, *jobs)
+	} else {
+		files = analyzeAll(fs.Args(), cfg, *jobs)
+	}
+	for _, r := range files {
 		if r.err != nil {
 			fmt.Fprintln(os.Stderr, "error:", r.err)
 			status = 1
 			continue
 		}
 		results = append(results, r.res)
+		if *candidateJSON != "" {
+			candidateReports = append(candidateReports, r.candidates)
+		}
 	}
 	opts := report.Options{MinScore: *minScore, Verbose: *verbose}
 	if *asJSON {
@@ -189,6 +240,16 @@ func run(args []string) int {
 	} else {
 		for _, r := range results {
 			report.Text(os.Stdout, r, opts)
+		}
+	}
+	if *candidateJSON != "" {
+		if status != 0 {
+			fmt.Fprintln(os.Stderr, "error: candidate JSON not published because one or more input analyses failed")
+			return status
+		}
+		if err := writeCandidateSidecar(*candidateJSON, candidateProtected, candidateReports); err != nil {
+			fmt.Fprintln(os.Stderr, "error: candidate JSON:", err)
+			return 1
 		}
 	}
 	if *failOn != "" && stats.SeverityRank(report.MaxSeverity(results, *minScore)) >= stats.SeverityRank(strings.ToLower(*failOn)) {
@@ -358,17 +419,26 @@ func runEval(args []string) int {
 }
 
 // version is the release tag.
-const version = "10.0"
+const version = "11a"
 
 type fileResult struct {
-	res *engine.Result
-	err error
+	res        *engine.Result
+	candidates engine.DecodeCandidateReport
+	err        error
 }
 
 // analyzeAll analyses captures with up to jobs workers (v9c 3.1). Each file
 // is independent; results come back in argument order, identical to a
 // sequential run. Memory is roughly jobs × the largest per-file peak.
 func analyzeAll(paths []string, cfg engine.Config, jobs int) []fileResult {
+	return analyzeAllMode(paths, cfg, jobs, false)
+}
+
+func analyzeAllWithCandidates(paths []string, cfg engine.Config, jobs int) []fileResult {
+	return analyzeAllMode(paths, cfg, jobs, true)
+}
+
+func analyzeAllMode(paths []string, cfg engine.Config, jobs int, includeCandidates bool) []fileResult {
 	out := make([]fileResult, len(paths))
 	if jobs < 1 {
 		jobs = 1
@@ -383,8 +453,15 @@ func analyzeAll(paths []string, cfg engine.Config, jobs int) []fileResult {
 		go func() {
 			defer wg.Done()
 			for i := range next {
-				res, err := engine.AnalyzeFile(paths[i], cfg)
-				out[i] = fileResult{res, err}
+				var res *engine.Result
+				var candidates engine.DecodeCandidateReport
+				var err error
+				if includeCandidates {
+					res, candidates, err = engine.AnalyzeFileWithCandidates(paths[i], cfg)
+				} else {
+					res, err = engine.AnalyzeFile(paths[i], cfg)
+				}
+				out[i] = fileResult{res: res, candidates: candidates, err: err}
 			}
 		}()
 	}

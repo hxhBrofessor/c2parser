@@ -547,7 +547,11 @@ func writeStream(b *Builder, st Stream, client string, evs []Event, r *rand.Rand
 				if strings.Contains(uri, "?") {
 					sep = "&"
 				}
-				uri, body = uri+sep+"d="+string(poll), ""
+				q := string(poll)
+				if k.c.Encoding == "words" { // form-encode the word separators
+					q = strings.ReplaceAll(q, " ", "+")
+				}
+				uri, body = uri+sep+"d="+q, ""
 			}
 			hdrs := append([]string{"Host: " + hostOr(st.Name, srv)}, k.c.Headers...)
 			ts = c.t.Send(ts, true, HTTPReq(m, uri, hdrs, body), 1400)

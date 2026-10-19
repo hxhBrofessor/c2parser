@@ -1,0 +1,25 @@
+# v11a N1: HTTP GET channel carrying a fresh base58 token per request in the
+# query (?d=…) and a base58-encoded response body. Evidence, not attribution:
+# the carrier signal names the encoding, never a framework.
+name: shape-carrier-base58
+seed: 302
+streams:
+  - label: c2
+    shape: transport=http,carrier=query+body,encoding=base58
+    transport: http-keepalive
+    server: 198.51.100.102
+    name: cdn-base58.example
+    topology: {clients: [10.5.0.41]}
+    timing: {model: symmetric, sleep: 30, jitter: 0.3, events: 40}
+    content:
+      method: GET
+      uri: /api/status
+      encoding: base58
+      headers: ["User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept: */*"]
+      poll: {dist: uniform, min: 160, max: 240}
+      resp: {dist: uniform, min: 200, max: 300}
+expect:
+  - {engine: v1, server: 198.51.100.102, min: 0.65, evidence: encoded_payload_in_query}
+  - {engine: v1, server: 198.51.100.102, min: 0.65, evidence: encoded_payload_in_resp}
+  - {engine: v2, server: 198.51.100.102, min: 0.65, evidence: encoded_payload_in_query}
+  - {engine: v2, server: 198.51.100.102, min: 0.65, evidence: encoded_payload_in_resp}

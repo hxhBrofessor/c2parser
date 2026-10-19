@@ -49,22 +49,23 @@ func (s Size) Draw(r *rand.Rand) int {
 // Content describes message bodies. Shape labels only: header bytes,
 // encoding, XOR key length, padding and decoded-length residue mod 16.
 type Content struct {
-	Poll     Size     `yaml:"poll" json:"poll"`
-	Resp     Size     `yaml:"resp" json:"resp"`
-	Encoding string   `yaml:"encoding" json:"encoding,omitempty"` // raw | text | base64 | base64url | base32 | hex | netbios
-	Header   string   `yaml:"header" json:"header,omitempty"`     // hex bytes at the start of every decoded body
-	XORKey   int      `yaml:"xor_key" json:"xor_key,omitempty"`   // > 0: ASCII plaintext XORed with a repeating key of this length
-	Pad      [2]int   `yaml:"pad" json:"pad,omitempty"`           // random padding U[Pad[0], Pad[1]]
-	Residue  string   `yaml:"residue" json:"residue,omitempty"`   // "" | "0" | "4" | "12" | "uniform": decoded length mod 16
-	Method   string   `yaml:"method" json:"method,omitempty"`     // HTTP method (GET: poll body goes in the URI)
-	URI      string   `yaml:"uri" json:"uri,omitempty"`
-	Headers  []string `yaml:"headers" json:"headers,omitempty"`
-	ALPN     []string `yaml:"alpn" json:"alpn,omitempty"`
-	TLS      string   `yaml:"tls" json:"tls,omitempty"`         // "1.3" (default) | "1.2"
-	QType    string   `yaml:"qtype" json:"qtype,omitempty"`     // dns: A | TXT | AAAA
-	Framing  string   `yaml:"framing" json:"framing,omitempty"` // tcp-pivot: le32 | be32 | be12
-	Preset   string   `yaml:"preset" json:"preset,omitempty"`   // ldap: recon | acl-sweep | aduc | logon; dcerpc-tcp: wmi-exec | epm-drsuapi
-	SASL     string   `yaml:"sasl" json:"sasl,omitempty"`       // ldap: "" plain | ntlm | krb (Kerberos-signed, RRC 12)
+	Poll     Size      `yaml:"poll" json:"poll"`
+	Resp     Size      `yaml:"resp" json:"resp"`
+	Encoding string    `yaml:"encoding" json:"encoding,omitempty"` // raw | text | base64 | base64url | base32 | base58 | words | hex | netbios
+	Wrap     [2]string `yaml:"wrap" json:"wrap,omitempty"`         // constant prepend / append around the *encoded* body (v11a)
+	Header   string    `yaml:"header" json:"header,omitempty"`     // hex bytes at the start of every decoded body
+	XORKey   int       `yaml:"xor_key" json:"xor_key,omitempty"`   // > 0: ASCII plaintext XORed with a repeating key of this length
+	Pad      [2]int    `yaml:"pad" json:"pad,omitempty"`           // random padding U[Pad[0], Pad[1]]
+	Residue  string    `yaml:"residue" json:"residue,omitempty"`   // "" | "0" | "4" | "12" | "uniform": decoded length mod 16
+	Method   string    `yaml:"method" json:"method,omitempty"`     // HTTP method (GET: poll body goes in the URI)
+	URI      string    `yaml:"uri" json:"uri,omitempty"`
+	Headers  []string  `yaml:"headers" json:"headers,omitempty"`
+	ALPN     []string  `yaml:"alpn" json:"alpn,omitempty"`
+	TLS      string    `yaml:"tls" json:"tls,omitempty"`         // "1.3" (default) | "1.2"
+	QType    string    `yaml:"qtype" json:"qtype,omitempty"`     // dns: A | TXT | AAAA
+	Framing  string    `yaml:"framing" json:"framing,omitempty"` // tcp-pivot: le32 | be32 | be12
+	Preset   string    `yaml:"preset" json:"preset,omitempty"`   // ldap: recon | acl-sweep | aduc | logon; dcerpc-tcp: wmi-exec | epm-drsuapi
+	SASL     string    `yaml:"sasl" json:"sasl,omitempty"`       // ldap: "" plain | ntlm | krb (Kerberos-signed, RRC 12)
 }
 
 // keyed holds per-stream content state (the XOR key is fixed per stream).
@@ -87,7 +88,7 @@ func newKeyed(c Content, r *rand.Rand) (*keyed, error) {
 		k.key = RandBytes(r, c.XORKey)
 	}
 	switch c.Encoding {
-	case "", "raw", "text", "base64", "base64url", "base32", "hex", "netbios":
+	case "", "raw", "text", "base64", "base64url", "base32", "base58", "words", "hex", "netbios":
 	default:
 		return nil, fmt.Errorf("unknown encoding %q", c.Encoding)
 	}
@@ -133,8 +134,16 @@ func (k *keyed) decoded(r *rand.Rand, n int) []byte {
 	return append(append([]byte{}, k.hdr...), p...)
 }
 
-// Encode applies the content encoding.
+// Encode applies the content encoding and the constant wrapper.
 func (k *keyed) encode(b []byte) []byte {
+	e := k.encodeOnly(b)
+	if k.c.Wrap != [2]string{} {
+		e = append(append([]byte(k.c.Wrap[0]), e...), k.c.Wrap[1]...)
+	}
+	return e
+}
+
+func (k *keyed) encodeOnly(b []byte) []byte {
 	switch k.c.Encoding {
 	case "base64":
 		return []byte(base64.StdEncoding.EncodeToString(b))
@@ -142,6 +151,10 @@ func (k *keyed) encode(b []byte) []byte {
 		return []byte(base64.RawURLEncoding.EncodeToString(b))
 	case "base32":
 		return []byte(strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(b)))
+	case "base58":
+		return []byte(Base58(b))
+	case "words":
+		return []byte(Words(b))
 	case "hex":
 		return []byte(hex.EncodeToString(b))
 	case "netbios":

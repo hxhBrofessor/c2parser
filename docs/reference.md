@@ -6,14 +6,14 @@ Every score comes with the signals that produced it.
 | Engine | What it looks at |
 |---|---|
 | **HTTP C2** | Full TCP reassembly → HTTP/1.x (Content-Length, chunked, keep-alive, pipelining, CONNECT, retransmissions). Body randomness, C2 framing signatures, request beaconing, header anomalies, file uploads. |
-| **TLS / QUIC** | ClientHello → SNI, ALPN, **JA3, JA4** (validated byte-for-byte against Wireshark 4.2 on 462 handshakes); ServerHello → JA3S; certificate (TLS ≤ 1.2) → self-signed, fresh/expired, name mismatch; **known C2 certs** by SHA-256 / serial / DN (Cobalt Strike `0x8BB00EE`, PoshC2 `CN=P18055077`, Covenant `CN=Covenant`, Brute Ratel C4 Unit 42 cluster, Sliver operator CA); **framework-agnostic cert anomalies**: empty issuer/subject DN (Sliver CA, Merlin), self-signed `O=Microsoft`, generator validity spans (730/1095/3650 days) on self-issued certs. **QUIC Initial decryption** (RFC 9001 v1 / RFC 9369 v2 keys from the DCID, stdlib crypto only) → ClientHello → SNI, ALPN, JA4 `q…`; QUIC SNI keys the v2 K1 series, so QUIC beacons over several IPs roll up. |
-| **Framework default HTTP profiles** | Per-channel conjunction (noisy-OR, threshold 0.65) of request and response literals: **Covenant** (`SESSIONID=1552332971750`, `i=a19ea…&data=` template, Chrome/41 UA, `/en-us/*.html`, IIS/7.5 + Hello World), **Merlin** (`application/octet-stream; charset=utf-8`, `Bearer eyJ…`, Chrome/40 UA, `POST /`), **PoshC2** (`Server: Apache ` with trailing space, HTTP/1.0 + `Content-type`, `SessionID=` cookie, 404/200 page literals), **Cobalt Strike no-profile** (21 default GET URIs + bare base64 Cookie, `POST /submit.php?id=`, checksum8 stager URIs, empty text/plain 404). Single common fields never fire alone. |
+| **TLS / QUIC** | ClientHello → SNI, ALPN, **JA3, JA4** (validated byte-for-byte against Wireshark 4.2 on 462 handshakes); ServerHello → JA3S; certificate (TLS ≤ 1.2) → self-signed, fresh/expired, name mismatch; configured certificate signatures and anomalies (some labels name frameworks, e.g. Cobalt Strike, PoshC2, Covenant, Brute Ratel and Sliver). These are detector matches, not independent proof of framework ownership. **QUIC Initial decryption** (RFC 9001 v1 / RFC 9369 v2 keys from the DCID, stdlib crypto only) → ClientHello → SNI, ALPN, JA4 `q…`; QUIC SNI keys the v2 K1 series, so QUIC beacons over several IPs roll up. |
+| **Framework-pattern HTTP heuristics** | Per-channel conjunction (noisy-OR, threshold 0.65) of configured request/response literals. Named patterns include Covenant, Merlin, PoshC2 and Cobalt Strike. These labels describe detector heuristics; they do not prove framework identity, universal defaults, or profile provenance. Single common fields never fire alone. |
 | **Generic beaconing** | Client→server bursts on any TCP/UDP channel scored for timer-like regularity. |
 | **Encrypted DNS** | DoT (TCP/853), DoQ (QUIC on UDP/853 or 8853), DoH to public resolvers (hostname/IP lists), ALPN `dot`/`doq`. Custom DoH is caught by behaviour: long-lived no-SNI sessions and beaconing. |
 | **SMB2 named pipes** | Tree connect / create / READ / WRITE / pipe-transceive tracked per FileId → pipe name, volume, timing, embedded C2 framing, NTLM user. Catches Havoc / Cobalt Strike SMB pivots. Default pipe names for Cobalt Strike (`msagent_##`, `postex_####`, `TSVCPIPE-…`, `Winsock2\CatalogChangeListener-###-0`, `cubeb-pipe-…`), Covenant (`gruntsvc`) and PoshC2 (`jaccdpqnvbrrxlaf`). |
 | **Lateral movement (DCE/RPC)** | BIND/REQUEST parsing over SMB pipes **and raw TCP** (found by PDU header, not port; fragments reassembled) → interface + opnum: PsExec/smbexec service creation, atexec/schtasks, PetitPotam, PrinterBug, PrintNightmare, **WMI `ExecMethod` (wmiexec)** and **DCOM `RemoteCreateInstance` (dcomexec)**. Responses teach dynamic ports: `ept_map` towers and DCOM OXID bindings label streams whose BIND predates the capture. Auth level is recorded; sealed/signed stubs are volume only. **DC guard:** `DRSGetNCChanges` from a domain controller (seen serving Kerberos/LDAP or drsuapi, or named with `-dc`) is an info "DC replication" finding; from any other host it is `dcsync_from_non_dc`. Every call is listed in JSON `rpc_calls`. |
 | **AD reconnaissance** | LDAP SearchRequests (BER, also inside SASL NTLM-signed / Kerberos wraps incl. the Windows rotated-checksum form; sealed binds give volume only): UAC delegation and AS-REP bit tests, `servicePrincipalName=*`, delegation and LAPS attributes, `adminCount=1`, `nTSecurityDescriptor` with SD_FLAGS (subtree, or per-object sweeps of ≥ 10 accounts in 10 min), bulk subtree dumps (≥ 50 entries / ≥ 2 pages, or a completed dump of every user); samr account/group enumeration; MS-TSTS session enumeration (low weight). From a host with a C2 finding ≥ 0.6 the recon joins that finding (`recon_from_c2_host`, filters as evidence); elsewhere it is a standalone finding capped at medium. rootDSE, GPO (`gPLink`) reads, single-account lookups and DC↔DC traffic are never scored. |
-| **DNS** | Per registrable domain: name cardinality ratio, unique subdomains, length, label length, alphabet-aware randomness, encoded bytes, TXT/NULL use, answers never contacted, query beaconing. Per client: NXDOMAIN spread (DGA). UDP and TCP. **Cobalt Strike DNS beacon defaults** as a conjunction: stager marker (`.stage.123456.`, `aaa.stage.`), `cdn.`/`www6.`/`api.`/`www.`/`post.` + hex names, idle answer `0.0.0.0`, TTL 1. |
+| **DNS** | Per registrable domain: name cardinality ratio, unique subdomains, length, label length, alphabet-aware randomness, encoded bytes, TXT/NULL use, answers never contacted and query beaconing. Per client: NXDOMAIN spread. UDP and TCP. DNS-shape findings are behavioral evidence, not framework attribution. Cobalt Strike-labelled defaults are a conjunction of configured indicators, not a protocol validator. |
 | **Exfiltration** | Per channel *and* per connection: upload volume × producer/consumer ratio, encrypted uploads, fixed-size chunks, HTTP file uploads, SMB share writes, DNS-encoded volume. |
 | **Host risk** | Cumulative risk per internal host across all findings. |
 
@@ -68,9 +68,20 @@ against path traversal. Cache: `<user cache dir>/c2parser/sigma/` with a
 `state.json` recording repo, ref, SHA and check time. Network failures never
 stop an analysis.
 
-Built-in rules (`rules/sigma/`, compiled into the binary): Havoc default profile,
-Mythic `http` and `websocket` defaults, Mythic `smb` UUID pipe names, Sliver DNS
-name shape. To write your own, copy one and change the detection. Escape
+The updater caps compressed archive input at 512 MiB and skips individual
+rule files larger than 1 MiB (`internal/sigma/update.go`). These are download
+and extraction bounds, not a total cache-size limit; older refs and local
+additions can remain in the user cache.
+
+Built-in rules (`rules/sigma/`, compiled into the binary) include Havoc- and
+Mythic-labelled compatibility rules and a Sliver-labelled DNS-shape rule.
+Those names and rule titles are detector labels, not independent proof that a
+matching flow belongs to that framework or that the pattern is a universal
+profile default. The available Mythic snapshot is under
+`_reference-sources/mythic/`; its archive commit is unverified and it does not
+include the separate profile implementations needed to establish the HTTP,
+WebSocket and SMB defaults claimed by the current rule metadata. For examples,
+copy a rule and change the detection. Escape
 literal `*`/`?` as `\*`/`\?`; e.g. Havoc's `Content-Type: */*` is `'\*/\*'`.
 
 The evaluator supports the modifiers and conditions the network corpus uses
@@ -81,6 +92,130 @@ correlation rules are reported as unsupported. On the 2026-10 corpus: 178 of
 573 rule files apply to packet data, with 0 parse errors.
 
 ## Detection math
+
+## v11a alternate decoding candidates
+
+The primary HTTP token decoder retains the v10-compatible label, decoded
+bytes, carrier location and ordering. Base32 and Base58 are separate alternate
+interpretations; syntax-valid candidates are explicitly marked `unconfirmed`
+because token contents alone do not establish the intended encoding. Candidate
+generation does not enter scoring, severity, classification, signal weights,
+finding identity, the primary JSON result, or the human-readable report. This
+does not claim universal backward compatibility for every external parser.
+
+Candidates are disabled by default. The library API is
+`engine.AnalyzeFileWithCandidates`; the CLI option is `-candidate-json path`.
+The sidecar is a JSON array of per-input reports with `schema_version: 2`;
+candidate fields include `id`, `flow_id`, `frame`, `direction`, message/token
+ordinals, `carrier`, `location`, token SHA-256/length, `encoding`,
+`decoded_bytes_base64` (JSON's Base64 representation of the byte slice),
+`syntax_validity`, `identification` and `identification_note`. Ordering is
+deterministic. The sidecar is separate from the established `-json` output.
+
+The fixed candidate limits are at most two encodings per token; 512 token
+bytes and 512 decoded bytes per record; 8,192 token attempts per capture; 128
+records and 64 KiB decoded bytes per HTTP channel; and 4,096 records and 2 MiB
+decoded bytes per capture. These limits are reported in the sidecar.
+
+Response-body candidate decoding is restricted to the retained 512-byte HTTP
+body sample and is omitted when parsing marks the body incomplete or the full
+body does not fit in that sample; the schema counts omissions in
+`truncated.incomplete_body`. Surrounding whitespace is trimmed by the
+existing response-token selector. Strict candidate syntax itself rejects
+whitespace/newlines; a trailing newline is therefore not part of the
+reported token after that trimming, and should not be treated as evidence of
+encoding or completeness. If a 512-byte token is followed by a line feed, the
+513-byte response body does not fit in the retained sample and the candidate
+is conservatively omitted with `incomplete_body`; this does not mean that all
+complete response bodies ending in a newline are suppressed.
+
+When requested, the CLI validates the sidecar destination before analysis.
+It refuses paths that alias the capture, IOC input, supplied Sigma files/cache,
+stdout or stderr, and refuses symlink and non-regular-file destinations. It
+stages complete JSON in an exclusive same-directory temporary file with mode
+`0600`, syncs and closes it, then atomically publishes by anchored rename and
+cleans up the temporary file on errors. Analysis failure suppresses sidecar
+publication. A publication error is reported on stderr with a nonzero exit;
+because normal output is written before final publication, already-written
+primary output is not rolled back. A concurrently authorized actor that can
+rename the protected input itself inside the publication race window is
+outside the tested filesystem threat model. Runtime hardening was independently
+tested on macOS arm64; Windows/Linux implementations were cross-compiled but
+not runtime-validated here.
+
+The sidecar API and schema are additive and opt-in; external strict JSON
+consumers and third-party integrations have not been universally validated.
+
+## DNS score cap and attribution limits
+
+F07 first added source-grounded synthetic DNS positives and matched cached
+benign controls. Its initial correlation guard brought those controls below
+0.40, but independent review found that the same guard could also cap
+high-novelty suspicious channels. R-01 COA 1 replaced that inference with an
+explicit measured-name-reuse predicate and a saturation guard. Independent
+review verified the 19/20/21-query boundaries and retry handling under both
+engines, while preserving the matched-benign threshold and malicious
+indicators. A shape cap is applied only when the detector actually observes
+reuse and the contributing evidence is the correlated query-shape family;
+absence of a novelty signal is not itself reuse.
+
+The Sliver snapshot supports specific DNS schema and encoding facts, not a
+universal detector attribution. The schema
+`_reference-sources/sliver/protobuf/dnspb/dns.proto:5-28` lists message types
+(`NOP`/fingerprint, `INIT`, `POLL`, `CLOSE`, `MANIFEST`, `DATA_TO_IMPLANT`,
+`DATA_FROM_IMPLANT`, `CLEAR`) and fields `Type`, `ID`, `Start`, `Stop`, `Size`
+and `Data`; the `ID` comment specifies 8-bit message and 24-bit DNS-session
+portions. The client generates a nonzero 24-bit session ID and composes the
+message ID in
+`_reference-sources/sliver/implant/sliver/transports/dnsclient/dnsclient.go:827-835,1040-1050`.
+The encoder at
+`_reference-sources/sliver/implant/sliver/encoders/base32.go:26-38` defines a
+custom case-sensitive alphabet with no padding. The client `SplitBuffer` and
+`encodeDNSMessage` at
+`_reference-sources/sliver/implant/sliver/transports/dnsclient/dnsclient.go:711-824`
+marshal message chunks, encode them, and join the resulting data into DNS
+subdomains; server `decodeSubdata` at
+`_reference-sources/sliver/server/c2/dns.go:663-677` lowercases and joins
+subdomain labels before decoding. These are snapshot-specific static facts;
+the archive identity is unverified, and one session versus multiple sessions
+is a test variation rather than an invariant claimed here. The detector remains
+a behavioral heuristic, not a Sliver protocol validator.
+
+## Mythic provenance limits
+
+The maintained Mythic source snapshot contains core message-processing code.
+For example, `mythic-docker/src/rabbitmq/util_agent_message.go:624-663`
+shows parsing of textual or binary UUID prefixes in the inspected snapshot.
+The current detector recognizes a narrower ASCII UUID-prefix heuristic; this
+does not validate encryption, the rest of a message, or Mythic ownership.
+`_reference-sources/SOURCE_MANIFEST.md` marks the archive commit unverified.
+The inspected tree does not establish the separate HTTP/WebSocket/SMB profile
+defaults referenced by compatibility rule names, including the IE11 User-Agent
+and `NetDNA-cache/2.2` header. Those profile claims remain unverified. Current
+operator-visible UA/server strings and built-in Sigma titles retain those
+labels; changing them would alter executable output and requires a separate
+compatibility decision.
+
+## v11a acceptance evidence
+
+The following local evidence is independently reviewed; it is not a release
+acceptance declaration:
+
+| Gate | Current evidence | Status / limitation |
+|---|---|---|
+| F01–F09 and R-01 | Finding-specific independent review artifacts under `.local/codex-reviews/` and `.local/claude-reviews/` | Closed for their stated scopes. |
+| N1 COA 3 and sidecar D1–D3 | `.local/claude-reviews/n1/` and `sidecar-retest/` | Closed; runtime evidence is macOS arm64. Windows/Linux were compile-tested only. |
+| Corpus | `internal/engine/corpus_test.go`; 45 YAML scenarios, each run under v1/v2 | Synthetic regression evidence only; no real-world accuracy inference. |
+| Root Go discovery, tests, vet, formatting, race/fuzz | Finding-specific logs and the D01 `D01-validation.log` | Report only commands actually rerun there; historical results are separately labelled. |
+| Lab captures and transforms | `TestCapture*`, `TestLabTransforms` require external `C2PARSER_TESTDATA` | **UNVERIFIED**; no lab-capture PASS is claimed here. |
+| NetSupport score threshold | Requires the relevant lab capture | **UNVERIFIED**. |
+| Linux runtime/scale against v10 baseline | macOS is the current runtime; platform cross-compilation is not execution | **UNVERIFIED**. |
+| Stress baseline currency | `internal/engine/testdata/scale_baseline.json` is the stored comparison; historical gate references v9 | **UNVERIFIED** as a current v10-baseline acceptance result. |
+| Live Sigma and external real-data manifests | No live Sigma deployment or protected real-data manifest run is part of local synthetic evidence | **UNVERIFIED**. |
+| Mythic profile provenance | Available core snapshot lacks the separately versioned profiles | **UNVERIFIED**; operator metadata retains legacy attribution labels. |
+
+The v11a release remains **HOLD** until its owner-defined acceptance evidence
+is available. A passing Go suite or cross-compile does not close these gates.
 
 ### 1. Randomness instead of raw entropy
 The original tool flagged bodies with Shannon entropy > 7.5 (tuned to 7.80 in the
@@ -130,11 +265,11 @@ encrypted uploads, fixed-size chunks (e.g. 14 × 512 KB), HTTP file uploads
 
 ### 4. DNS tunnelling, DNS beacons & DGA
 Per registrable domain:
-* **Name cardinality ratio** (Luise 2024): distinct names / queries. Tunnels
-  and DNS beacons make a new name almost every query. Sliver's DNS C2 keeps
-  per-name entropy normal on purpose, so this signal is *not* gated on
-  randomness. Scored from 0.4 (Luise's production threshold) to 0.8, with
-  volume ≥ 20.
+* **Name cardinality ratio** (Luise 2024): distinct names / logical queries.
+  Tunnels and DNS beacons may produce many distinct names. This signal does
+  not require high per-name randomness. Novelty is measured starting at 20
+  logical queries; same-client/name retries inside the retry window are
+  collapsed before counting.
 * Unique subdomains, mean length, longest label, alphabet-aware randomness
   (modulates, never gates), TXT/NULL share, encoded volume, query beaconing.
 * **Resolved but never contacted**: answer IPs the client never connects to
@@ -142,6 +277,27 @@ Per registrable domain:
 
 Per client: distinct NXDOMAIN registrable domains × randomness of those labels
 (a 26-letter alphabet separates DGA strings from English-like names).
+
+The DNS shape-only score cap is narrower than the novelty measurement. It is
+eligible only when name reuse is measured: distinct names/logical queries is
+below 0.4 and the unique-name set has not reached its 200,000-name saturation
+bound. Missing novelty evidence is not reuse. The cap also requires correlated
+long-name and long-label shape signals without independent malicious
+indicators. High-novelty traffic below 20 queries is not capped merely because
+the novelty signal is absent. The independent R-01 tests cover the 19/20/21
+query boundary and retries under v1 and v2.
+
+Residual limitations remain: per-zone aggregation can dilute novelty when
+traffic from different channels shares a zone; short low-novelty channels may
+be capped when their evidence is shape-only; and benign traffic using novel,
+high-randomness names can score highly. A DNS score is behavioral evidence,
+not confirmed C2 or Sliver attribution.
+
+One separate built-in Sigma rule, `rules/sigma/dns_sliver_beacon_name_shape.yml`,
+still matches the legacy literal `^baak`. This rule is distinct from the
+source-grounded DNS shape analysis and remains an unresolved specificity and
+attribution limitation; it is not being changed in this documentation-only
+checkpoint.
 
 ### 5. When content is hidden (encrypted DNS / TLS C2)
 From Active Countermeasures' encrypted-DNS comparison: encryption moves

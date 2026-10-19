@@ -9,12 +9,17 @@ import (
 
 // Positional profile of DNS labels. Encoders put fixed framing (message
 // type, session id, sequence) at fixed offsets and encoded data after it:
-// Sliver's names start with a constant "baak", dnscat2 with a hex session
-// id. A per-name or whole-domain entropy is diluted by that framing; looking
-// position by position separates constant columns (framing) from varying
-// columns, and asks whether the varying columns are as random as the
-// encoding alphabet allows. Length-independent, so short labels aren't
-// penalised the way per-name entropy is.
+// some tunnels prefix every name with a constant tag, dnscat2 with a hex
+// session id, others carry a per-session header in the first encoded
+// columns. A per-name or whole-domain entropy is diluted by that framing;
+// looking position by position separates constant columns (framing) from
+// varying columns, and asks whether the varying columns are as random as
+// the encoding alphabet allows. Length-independent, so short labels aren't
+// penalised the way per-name entropy is. Which prefix (if any) a given
+// framework produces is a profile question, not an assumption of this
+// profiler. The separate generic and snapshot-derived studies in
+// sliverdns_test.go measure whether prefixes persist as session IDs and
+// message types vary; neither presence nor absence identifies a framework.
 
 type positional struct {
 	Prefix    string           `json:"prefix,omitempty"` // constant framing at the start
@@ -26,6 +31,52 @@ type positional struct {
 }
 
 const posMinSamples = 20
+
+// dnsShapeCap is a mutation hook for the F07 query-shape correlation guard.
+var dnsShapeCap = true
+
+// dnsQueryShapeOnly identifies overlapping descriptions of the same query
+// vocabulary: name/label length, its encoded-size estimate, symbol distribution,
+// record types and cadence. Require both contributing length views so this
+// guard addresses their amplification without changing unrelated DNS findings.
+// Name novelty, response behavior, specific signatures, IOCs and any unknown
+// contributing signal are separate evidence and prevent the shape-only cap.
+func dnsQueryShapeOnly(sigs []stats.Signal) bool {
+	longName, longLabel := false, false
+	for _, s := range sigs {
+		if s.Contribution() < negligible {
+			continue
+		}
+		switch s.Name {
+		case "long_names":
+			longName = true
+		case "long_labels":
+			longLabel = true
+		case "unique_subdomains", "positional_randomness", "framing_prefix", "tunnel_record_types", "encoded_volume":
+		default:
+			if stats.FamilyOf(s.Name) != "timing" {
+				return false
+			}
+		}
+	}
+	return longName && longLabel
+}
+
+// dnsCardinalityFloor is the distinct-names-per-logical-query ratio below
+// which a domain repeats its names: name_cardinality_ratio starts scoring
+// above it ("tunnels ≈ 1, normal domains ≪ 0.4").
+const dnsCardinalityFloor = 0.4
+
+// dnsNameReuse reports measured name reuse: fewer than dnsCardinalityFloor
+// distinct names per logical query. It is a direct count of repeats, so it
+// needs no minimum volume (retries are already folded into logical
+// queries; unique ≤ logical, so no queries means no reuse). Not measurable
+// once the distinct-name set has hit maxUniqueSubs: the ratio would fall for
+// a huge all-unique tunnel. R-01: the F07 shape cap requires this; the
+// absence of a novelty signal (< 20 logical queries) is not evidence of reuse.
+func dnsNameReuse(logical, unique int) bool {
+	return unique < maxUniqueSubs && float64(unique) < dnsCardinalityFloor*float64(logical)
+}
 
 func positionalProfile(labels []string) positional {
 	var p positional

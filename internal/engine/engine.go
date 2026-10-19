@@ -96,15 +96,16 @@ type Counters struct {
 
 // Engine holds all state for one capture.
 type Engine struct {
-	leanGC       bool                  // this engine switched the GC to lean mode (gc.go)
-	tunnels      map[string]*tunnelAgg // HTTP CONNECT tunnels by client|target|proxy (v9c 2.3)
-	tunOrder     []*tunnelAgg
-	dcePorts     map[netip.AddrPort]dceLearned // dynamic DCE/RPC ports learned from ept_map / OXID (v10a 2.1)
-	dceConns     []*dceConn                    // DCE/RPC associations on raw TCP
-	ldapSessions []*ldapSession                // LDAP connections (v10a 2.2)
-	udpRecs      []ConnRecord
-	cfg          Config
-	internal     []netip.Prefix
+	leanGC             bool                  // this engine switched the GC to lean mode (gc.go)
+	tunnels            map[string]*tunnelAgg // HTTP CONNECT tunnels by client|target|proxy (v9c 2.3)
+	tunOrder           []*tunnelAgg
+	dcePorts           map[netip.AddrPort]dceLearned // dynamic DCE/RPC ports learned from ept_map / OXID (v10a 2.1)
+	dceConns           []*dceConn                    // DCE/RPC associations on raw TCP
+	ldapSessions       []*ldapSession                // LDAP connections (v10a 2.2)
+	udpRecs            []ConnRecord
+	cfg                Config
+	candidateCollector *candidateCollector // opt-in Base32/Base58 sidecar only
+	internal           []netip.Prefix
 
 	epoch       time.Time
 	first, last time.Time
@@ -167,19 +168,40 @@ func New(cfg Config) *Engine {
 
 // AnalyzeFile runs the full pipeline on one capture file.
 func AnalyzeFile(path string, cfg Config) (*Result, error) {
+	result, _, err := analyzeFile(path, cfg, false)
+	return result, err
+}
+
+// AnalyzeFileWithCandidates runs the unchanged primary analysis and
+// separately returns bounded, explicitly unconfirmed Base32/Base58
+// interpretations. The candidate sidecar never participates in scoring.
+func AnalyzeFileWithCandidates(path string, cfg Config) (*Result, DecodeCandidateReport, error) {
+	return analyzeFile(path, cfg, true)
+}
+
+func analyzeFile(path string, cfg Config, includeCandidates bool) (*Result, DecodeCandidateReport, error) {
 	r, err := pcapio.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, DecodeCandidateReport{}, err
 	}
 	defer r.Close()
 	e := New(cfg)
+	if includeCandidates {
+		e.candidateCollector = newCandidateCollector()
+	}
 	defer e.releaseLeanGC()
 	if err := e.Ingest(r); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+		return nil, DecodeCandidateReport{}, fmt.Errorf("%s: %w", path, err)
 	}
 	res := e.Finish()
 	res.File = path
-	return res, nil
+	if e.candidateCollector == nil {
+		return res, DecodeCandidateReport{}, nil
+	}
+	report := e.candidateCollector.report
+	report.File = path
+	sortDecodeCandidates(report.Candidates)
+	return res, report, nil
 }
 
 // Ingest consumes every packet from r.
@@ -483,6 +505,7 @@ type tcpConn struct {
 	sni            string
 	pendingMethods []string
 	lastHost       string
+	stagerPend     string      // checksum8 URI-shape family awaiting its response (v11a N2)
 	tunnel         bool        // HTTP CONNECT established
 	connectTarget  string      // host:port of the last CONNECT request
 	tunnelTarget   string      // host:port once the CONNECT succeeded
@@ -824,6 +847,7 @@ func (c *tcpConn) compact() {
 	c.tunTLS = [2]*tlsHalf{}
 	c.pendingMethods = nil
 	c.lastHost, c.connectTarget = "", ""
+	c.stagerPend = ""
 }
 
 var httpPorts = map[uint16]bool{80: true, 8080: true, 8000: true, 8008: true, 8888: true, 9090: true, 3128: true, 81: true, 591: true}

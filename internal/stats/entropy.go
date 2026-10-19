@@ -66,7 +66,7 @@ const (
 	AlphaAlnum    Alphabet = "alnum"    // 36 symbols (DNS-style a-z0-9), '-' ignored
 	AlphaBase64   Alphabet = "base64"   // 64 symbols (std or url-safe), '=' ignored
 	AlphaText     Alphabet = "text"     // printable ASCII, 95 symbols
-	AlphaNetbios  Alphabet = "netbios"  // 16 symbols a-p / A-P (Cobalt Strike & Mythic httpx "netbios" transform)
+	AlphaNetbios  Alphabet = "netbios"  // 16 symbols a-p / A-P (nibble-style transform; not framework attribution)
 	AlphaCustom32 Alphabet = "custom32" // 32 distinct alnum symbols, e.g. Sliver's base32 alphabet
 	AlphaBase58   Alphabet = "base58"   // 58 distinct case-sensitive alnum symbols
 	AlphaBase62   Alphabet = "base62"   // 62 distinct case-sensitive alnum symbols

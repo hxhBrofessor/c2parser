@@ -65,6 +65,9 @@ type acc struct {
 	srv      netip.Addr
 	namesSet bool
 	reconCap bool // standalone AD recon: capped below high (recon.go)
+	// dnsReuse is set when a DNS domain measurably reuses its names
+	// (dnsNameReuse); the F07 shape cap applies only then (R-01).
+	dnsReuse string
 }
 
 // names fills ServerNames on first need.
@@ -112,7 +115,7 @@ func (a *acc) capped(e *Engine, cad *cadence) bool {
 	for _, v := range a.sigs {
 		s = append(s, v)
 	}
-	if !onlyTiming(s) {
+	if !capTiming(s) {
 		return false
 	}
 	a.names(e)
@@ -222,16 +225,42 @@ func (e *Engine) score() []Finding {
 				a.f.Score = TimingOnlyMax
 				a.f.Evidence = append(a.f.Evidence, "timing is the only evidence: capped below critical")
 			}
+		} else if uriShapeCapTiming && timingPlusURIShape(a.f.Signals) {
+			// v11a N2: a URI shape on a periodic series is no more than
+			// the timing it rides; same caps (cf. timingPlusRecon).
+			a.names(e)
+			switch why := cad.benignReason(a.f); {
+			case why != "" && a.f.Score >= TimingOnlyCap:
+				a.f.Score = TimingOnlyCap
+				a.f.Evidence = append(a.f.Evidence, "timing and URI shape are the only evidence: capped below medium: "+why)
+			case why == "" && a.f.Score > TimingOnlyMax:
+				a.f.Score = TimingOnlyMax
+				a.f.Evidence = append(a.f.Evidence, "timing and URI shape are the only evidence: capped below critical")
+			}
 		}
 		// v10a.1 D3: AD recon joins a beacon as evidence, but recon on top
 		// of timing alone never makes the finding critical.
+		// v11a remediation F01: the recon guard and the URI-shape guard
+		// compose — timing + recon + URI habit is still timing + recon.
 		if reconCapTiming && a.f.Score > TimingOnlyMax && timingPlusRecon(a.f.Signals) {
 			a.f.Score = TimingOnlyMax
-			a.f.Evidence = append(a.f.Evidence, "timing and AD recon are the only evidence: capped below critical")
+			if hasURIShape(a.f.Signals) {
+				a.f.Evidence = append(a.f.Evidence, "timing, AD recon and URI shape are the only evidence: capped below critical")
+			} else {
+				a.f.Evidence = append(a.f.Evidence, "timing and AD recon are the only evidence: capped below critical")
+			}
 		}
 		if a.reconCap && a.f.Score > reconMax {
 			a.f.Score = reconMax
 			a.f.Evidence = append(a.f.Evidence, "recon from a host with no C2 finding: capped at medium")
+		}
+		// F07: several views of a long encoded-looking DNS vocabulary are
+		// correlated shape evidence, not separate observations of a tunnel.
+		// R-01: only when the domain measurably reuses its names — never
+		// because a novelty measurement is missing (short channels).
+		if dnsShapeCap && a.f.Category == CatDNS && a.dnsReuse != "" && a.f.Score > TimingOnlyCap && dnsQueryShapeOnly(a.f.Signals) {
+			a.f.Score = TimingOnlyCap
+			a.f.Evidence = append(a.f.Evidence, "correlated DNS query-name shape and timing are the only evidence: capped below medium ("+a.dnsReuse+")")
 		}
 		a.f.Severity = stats.Severity(a.f.Score)
 		// v9 Phase 1.2: below "low", an HTTP channel is not called C2.
@@ -280,7 +309,7 @@ func (e *Engine) scoreHTTP(sc *scorer) {
 		}
 		for name, n := range h.sigHits {
 			a.add(stats.Signal{Name: "sig:" + name, Weight: h.sigWeight[name], Score: 1 - math.Pow(0.5, float64(n)),
-				Detail: fmt.Sprintf("%s framing in %d of %d HTTP bodies", name, n, h.requests+h.responses)})
+				Detail: httpSignatureDetail(name, n, h.requests+h.responses)})
 		}
 		if n := h.randomUp + h.randomDn; n > 0 {
 			ma := h.maxRandom
@@ -299,6 +328,10 @@ func (e *Engine) scoreHTTP(sc *scorer) {
 		}
 		e.scoreCarriers(a, h)
 		scoreFrameworkDefaults(a, h)
+		scoreURIShapes(a, h, bsigs, e.cfg.TimingV2, e.cfg.Beacon.MinEvents)
+		if sg, ok := lengthResidueSignal(h.residue, [2]string{"request body", "response body"}); ok {
+			a.add(sg)
+		}
 		a.evidence("%d requests / %d responses; %s up, %s down", h.requests, h.responses, human(h.upload), human(h.download))
 		if ua := topKey(h.uas.Map()); ua != "" {
 			a.evidence("User-Agent: %s", ua)
@@ -434,16 +467,31 @@ func (e *Engine) scoreSMB(sc *scorer) {
 				}
 				if uuidPipe.MatchString(pn) {
 					a.add(stats.Signal{Name: "uuid_pipe_name", Weight: 0.6, Score: 1,
-						Detail: `pipe name is a bare UUID (Mythic smb profile default: random [a-z0-9]{8}-…-{12})`})
+						Detail: mythicUUIDPipeDetail()})
 				}
 				if f.mythicHits > 0 {
 					a.add(stats.Signal{Name: "mythic_message_in_pipe", Weight: 0.97, Score: 1 - math.Pow(0.5, float64(f.mythicHits)),
-						Detail: fmt.Sprintf("%d Mythic messages (base64 UUID‖ciphertext) in pipe data", f.mythicHits)})
+						Detail: mythicPipeDetail(f.mythicHits)})
 				}
 				if f.magicHits > 0 {
 					a.add(stats.Signal{Name: "c2_framing_in_pipe", Weight: 0.97, Score: 1 - math.Pow(0.5, float64(f.magicHits)),
 						Detail: fmt.Sprintf("Havoc Demon framing (0xDEADBEEF) found %d times in pipe data", f.magicHits)})
 					a.frames(f.magicFrames...)
+				}
+				// v11a N3: an unknown constant frame header on a pipe that is
+				// not a standard Windows pipe; known magics (above) and UUID-
+				// prefix heuristic hits already have separate evidence and are
+				// not double-counted.
+				if pivotFrames && f.magicHits == 0 && f.mythicHits == 0 && (!known || c2p != "") && f.frames != nil {
+					if hdr, ok := f.frames.constant(); ok {
+						a.add(pivotFrameSignal(hdr))
+					}
+				}
+				// v11a M2: decoded-length residue of an encrypted-looking pipe
+				if !known || c2p != "" {
+					if sg, ok := lengthResidueSignal(f.residue, [2]string{"pipe write", "pipe read"}); ok {
+						a.add(sg)
+					}
 				}
 				if total > 0 {
 					a.add(stats.Signal{Name: "pipe_volume", Weight: 0.35, Score: stats.Saturate(float64(total), 256<<10),
@@ -592,6 +640,9 @@ func (e *Engine) scoreDNS(sc *scorer) {
 		title := fmt.Sprintf("DNS tunnel candidate *.%s (client %s)", d.base, top)
 		a := sc.get("dns|"+d.base, CatDNS, title, top, netip.Addr{}, d.first, d.last)
 		a.f.Server = d.base
+		if dnsNameReuse(d.logical, ft.u) {
+			a.dnsReuse = fmt.Sprintf("%d distinct names reused across %d logical queries", ft.u, d.logical)
+		}
 		r := ft.r
 		// Randomness only modulates this signal (floor 0.4): Sliver's DNS C2
 		// keeps per-name entropy in the normal range on purpose.
@@ -623,7 +674,7 @@ func (e *Engine) scoreDNS(sc *scorer) {
 		// Computed on *logical* queries: repeats of the same name by the same
 		// client within 3 s (retries, A/AAAA/TXT twins) count once.
 		if d.logical >= 20 {
-			a.add(stats.Signal{Name: "name_cardinality_ratio", Weight: 0.5, Score: stats.Smoothstep(0.4, 0.8, ft.ratio) * stats.Clamp01(float64(d.logical-10)/40),
+			a.add(stats.Signal{Name: "name_cardinality_ratio", Weight: 0.5, Score: stats.Smoothstep(dnsCardinalityFloor, 0.8, ft.ratio) * stats.Clamp01(float64(d.logical-10)/40),
 				Detail: fmt.Sprintf("%d distinct names / %d logical queries = %.2f (raw %d queries incl. %d retries/twins → %.2f); tunnels ≈1, normal domains ≪ 0.4",
 					u, d.logical, ft.ratio, d.queries, d.retries, ft.rawRatio)})
 		}
@@ -818,20 +869,41 @@ func (e *Engine) scoreCarriers(a *acc, h *httpChannel) {
 		locs = append(locs, l)
 	}
 	sort.Strings(locs)
+	corroborated := false // a request location of this channel carries encoded payload
+	for _, loc := range locs {
+		if cs := h.carriers[loc]; !cs.resp && cs.requests >= 5 && cs.random > 0 {
+			corroborated = true
+		}
+	}
 	for _, loc := range locs {
 		cs := h.carriers[loc]
+		msgs := "requests"
+		if cs.resp {
+			msgs = "responses"
+		}
 		if cs.mythic > 0 {
 			a.add(stats.Signal{Name: "sig:mythic-agent-message", Weight: 0.97, Score: 1 - math.Pow(0.5, float64(cs.mythic)),
-				Detail: fmt.Sprintf("Mythic message (base64 UUID‖ciphertext) in %s of %d requests", loc, cs.mythic)})
+				Detail: mythicHTTPDetail(loc, cs.mythic, cs.requests, msgs)})
 		}
-		if cs.requests < 5 || cs.random == 0 {
+		encs, random := cs.encs, cs.random
+		// F02: field values of a structured response count only when the
+		// channel's requests carry encoded payload too (a two-way encoded
+		// exchange); a structured document carrying a fresh blob alone is
+		// ordinary content (thumbnails, tokens, encrypted app data).
+		structNote := ""
+		if cs.structRandom > 0 && corroborated {
+			random += cs.structRandom
+			structNote = fmt.Sprintf(", %d in structured-document fields (counted: requests on this channel carry encoded payload too)", cs.structRandom)
+		}
+		if cs.requests < 5 || random == 0 {
 			continue
 		}
+		// "resp:header:x" / "resp:body" → encoded_payload_in_resp (v11a N1)
 		kind, _, _ := strings.Cut(loc, ":")
-		frac := float64(cs.random) / float64(cs.requests)
+		frac := float64(random) / float64(cs.requests)
 		a.add(stats.Signal{Name: "encoded_payload_in_" + kind, Weight: 0.55, Score: frac * stats.Clamp01(float64(cs.requests-3)/10),
-			Detail: fmt.Sprintf("%s: %d/%d requests carry a fresh, random-after-decoding token (%s), e.g. %s",
-				loc, cs.random, cs.requests, fmtCounts(cs.encs, 3), cs.example)})
+			Detail: fmt.Sprintf("%s: %d/%d %s carry a fresh, random-after-decoding token (%s), e.g. %s%s%s",
+				loc, random, cs.requests, msgs, fmtCounts(encs, 3), cs.example, cs.wrapperEvidence(), structNote)})
 	}
 	for name, n := range h.respAnoms {
 		if h.responses > 0 {
@@ -855,7 +927,7 @@ func (e *Engine) scoreCarriers(a *acc, h *httpChannel) {
 		}
 		if w.mythic > 0 {
 			a.add(stats.Signal{Name: "sig:mythic-agent-message", Weight: 0.97, Score: 1 - math.Pow(0.5, float64(w.mythic)),
-				Detail: fmt.Sprintf("Mythic message in %d WebSocket messages", w.mythic)})
+				Detail: mythicWebSocketDetail(w.mythic)})
 		}
 		if w.havoc > 0 {
 			a.add(stats.Signal{Name: "sig:havoc-demon-header", Weight: 0.97, Score: 1 - math.Pow(0.5, float64(w.havoc)),
@@ -869,9 +941,9 @@ func (e *Engine) scoreCarriers(a *acc, h *httpChannel) {
 	}
 }
 
-// scoreRawStreams flags C2 framing found in unclassified TCP streams.
-// Peer-to-peer links (Mythic tcp, Havoc/Sliver pivots) are usually
-// internal↔internal, so scope rules don't apply here.
+// scoreRawStreams flags C2 framing found in unclassified TCP streams. Raw-
+// stream findings include connections not classified as HTTP, TLS, SMB or
+// DNS; this path applies the scope handling shown below.
 func (e *Engine) scoreRawStreams(sc *scorer) {
 	for _, ch := range e.chOrder {
 		r := ch.raw
@@ -886,7 +958,7 @@ func (e *Engine) scoreRawStreams(sc *scorer) {
 		a := sc.get(c2Key(k.client, k.server, k.port), CatC2, title, k.client, k.server, ch.first, ch.last)
 		if r.mythic > 0 {
 			a.add(stats.Signal{Name: "sig:mythic-agent-message", Weight: 0.97, Score: 1 - math.Pow(0.5, float64(r.mythic)),
-				Detail: fmt.Sprintf("%d Mythic messages in the TCP stream", r.mythic)})
+				Detail: mythicRawTCPDetail(r.mythic)})
 		}
 		if r.havoc > 0 {
 			a.add(stats.Signal{Name: "sig:havoc-demon-header", Weight: 0.97, Score: 1 - math.Pow(0.5, float64(r.havoc)),
@@ -895,6 +967,35 @@ func (e *Engine) scoreRawStreams(sc *scorer) {
 		a.evidence("%d connections, %s up, %s down", ch.conns, human(ch.out), human(ch.in))
 		a.frames(r.frames...)
 	}
+}
+
+// These details name only the observed UUID-prefix heuristic. They retain
+// carrier context without asserting a verified Mythic identity or ciphertext.
+func mythicUUIDPipeDetail() string {
+	return "pipe name is a bare UUID (Mythic-style profile heuristic, unconfirmed)"
+}
+
+func mythicPipeDetail(hits int) string {
+	return fmt.Sprintf("%d Base64 runs with an ASCII-UUID prefix (Mythic-style heuristic, unconfirmed) in pipe data", hits)
+}
+
+func mythicHTTPDetail(loc string, hits, total int, msgs string) string {
+	return fmt.Sprintf("Decoded token with an ASCII-UUID prefix (Mythic-style heuristic, unconfirmed) in %s (%d of %d %s)", loc, hits, total, msgs)
+}
+
+func httpSignatureDetail(name string, hits, total int) string {
+	if name == "mythic-agent-message" {
+		return fmt.Sprintf("UUID-prefix framing heuristic (Mythic-style; attribution unconfirmed) in %d of %d HTTP bodies", hits, total)
+	}
+	return fmt.Sprintf("%s framing in %d of %d HTTP bodies", name, hits, total)
+}
+
+func mythicWebSocketDetail(hits int) string {
+	return fmt.Sprintf("Mythic-style UUID-prefix heuristic (unconfirmed) matched in %d WebSocket messages", hits)
+}
+
+func mythicRawTCPDetail(hits int) string {
+	return fmt.Sprintf("Mythic-style UUID-prefix heuristic (unconfirmed) matched %d times in the TCP stream", hits)
 }
 
 // TimingOnlyCap is the maximum score of a timing-only finding that looks
@@ -913,6 +1014,13 @@ var reconCapTiming = true
 
 // timingPlusRecon: the finding's evidence is timing (with session shape)
 // plus recon_from_c2_host and nothing else.
+//
+// v11a remediation F01: URI shapes (uri_shape:*) are habits of the same
+// periodic client, not independent evidence, so when the URI-shape guard
+// is on they are set aside here as well; otherwise each guard would see
+// the other's signal and neither would apply (timing + recon + URI shape
+// went critical). Payload, framing and residue signals are untouched and
+// still lift the finding.
 func timingPlusRecon(sigs []stats.Signal) bool {
 	recon := false
 	var rest []stats.Signal
@@ -921,9 +1029,29 @@ func timingPlusRecon(sigs []stats.Signal) bool {
 			recon = recon || sg.Contribution() >= negligible
 			continue
 		}
+		if uriShapeCapTiming && strings.HasPrefix(sg.Name, "uri_shape:") {
+			continue
+		}
 		rest = append(rest, sg)
 	}
 	return recon && onlyTiming(rest)
+}
+
+// hasURIShape: a non-timing uri_shape:* signal contributes, i.e. one the
+// recon guard set aside (fixed-uri in the timing family is timing).
+func hasURIShape(sigs []stats.Signal) bool {
+	for _, sg := range sigs {
+		if strings.HasPrefix(sg.Name, "uri_shape:") && stats.FamilyOf(sg.Name) != "timing" && sg.Contribution() >= negligible {
+			return true
+		}
+	}
+	return false
+}
+
+// capTiming: the finding takes the timing-only caps — timing alone, or
+// timing plus URI shapes (v11a N2).
+func capTiming(sigs []stats.Signal) bool {
+	return onlyTiming(sigs) || uriShapeCapTiming && timingPlusURIShape(sigs)
 }
 
 func onlyTiming(sigs []stats.Signal) bool {

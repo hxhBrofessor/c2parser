@@ -11,9 +11,9 @@ import (
 //
 // After "101 Switching Protocols" + "Upgrade: websocket" the connection
 // carries RFC 6455 frames. Client→server frames are masked. Messages are
-// re-assembled from continuation frames and analysed like HTTP bodies
-// (randomness, Havoc/Mythic framing) with their own timing series, which is
-// how Mythic's websocket profile (poll mode, 10 s ± 37%) shows up.
+// re-assembled from continuation frames and analysed like HTTP bodies for
+// randomness and heuristic framing signals, with their own timing series.
+// These observations do not identify a Mythic profile.
 
 const maxWSMessage = 4 << 20
 
@@ -117,8 +117,8 @@ func (e *Engine) onWSMessage(c *tcpConn, client bool, msg []byte, n int64, ts ti
 		w.serverMsgs++
 		w.bytesDown += n
 	}
-	// Assess the message, or the longest base64 run inside it (Mythic wraps
-	// its base64 message in JSON: {"client":true,"data":"…","tag":""}).
+	// Assess the message, or the longest base64 run inside it. Some JSON
+	// payloads may contain such runs; this is not a validated Mythic wrapper.
 	a := stats.AssessBytes(msg)
 	if a.Score < 0.8 {
 		if run := longestB64(msg); len(run) >= 64 {
@@ -158,9 +158,9 @@ func longestB64(b []byte) []byte {
 
 // ------------------------------------------------------- raw TCP scanner
 //
-// Streams that are neither HTTP, TLS, SMB nor DNS (e.g. Mythic's tcp P2P
-// profile on a random port, Havoc/Sliver TCP pivots, custom implants) get a
-// bounded scan for known C2 framing and a randomness profile.
+// Streams that are neither HTTP, TLS, SMB nor DNS (including configured
+// peer-to-peer C2 traffic) get a bounded scan for known framing and a
+// randomness profile. This scan is not a Mythic protocol validator.
 
 const rawScanLimit = 1 << 20
 

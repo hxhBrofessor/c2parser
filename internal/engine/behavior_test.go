@@ -143,76 +143,112 @@ func TestParseIOCLine(t *testing.T) {
 	}
 }
 
-// Reproduces the Sliver DNS C2 traffic in Luise (2024): 12-char labels with
-// a constant "baak" framing prefix over Sliver's 32-symbol alphabet, each
-// name queried 3× (so the naive unique/total ratio is ~0.33), and
-// per-name entropy indistinguishable from mozilla.com / gstatic.com.
-func TestSliverDNSAsInLuise(t *testing.T) {
-	s := newSynth(t)
-	r := mrand.New(mrand.NewPCG(31, 32))
-	const alpha = "ab1c2d3e4f5g6h7j8k9m0npqrtuvwxyz"
-	ts := s.now
-	id := uint16(1)
-	for i := 0; i < 300; i++ {
-		ts = ts.Add(time.Duration((2 + 0.4*(r.Float64()*2-1)) * float64(time.Second)))
-		lbl := []byte("baak")
-		for j := 0; j < 8; j++ {
-			lbl = append(lbl, alpha[r.IntN(len(alpha))])
-		}
-		name := string(lbl) + ".dns.happytoseeyou.com"
-		for rep := 0; rep < 3; rep++ {
-			at := ts.Add(time.Duration(rep*150) * time.Millisecond)
-			s.dnsQuery(at, "10.0.0.50", "10.0.0.53", name, layers.DNSTypeA, id)
-			s.dnsResp(at.Add(15*time.Millisecond), "10.0.0.50", "10.0.0.53", name, layers.DNSTypeA, id, layers.DNSResponseCodeNoErr,
-				[]layers.DNSResourceRecord{{Name: []byte(name), Type: layers.DNSTypeA, Class: layers.DNSClassIN, TTL: 0, IP: []byte{byte(r.IntN(255)), byte(r.IntN(255)), 0, 1}}})
-			id++
-		}
-	}
-	for i, n := range []string{"push.services.mozilla.com", "location.services.mozilla.com", "www.gstatic.com", "fonts.gstatic.com", "content-signature-2.cdn.mozilla.net"} {
-		for k := 0; k < 30; k++ {
-			at := s.now.Add(time.Duration(i*1000+k*37) * time.Second)
-			s.dnsQuery(at, "10.0.0.51", "10.0.0.53", n, layers.DNSTypeA, id)
-			s.dnsResp(at.Add(10*time.Millisecond), "10.0.0.51", "10.0.0.53", n, layers.DNSTypeA, id, layers.DNSResponseCodeNoErr,
-				[]layers.DNSResourceRecord{{Name: []byte(n), Type: layers.DNSTypeA, Class: layers.DNSClassIN, TTL: 300, IP: []byte{142, 250, 0, byte(i)}}})
-			id++
-		}
-	}
-	res := s.analyze(Config{})
-	var sliver, mozilla *DNSDomainSummary
-	for i := range res.DNS {
-		switch res.DNS[i].Domain {
-		case "happytoseeyou.com":
-			sliver = &res.DNS[i]
-		case "mozilla.com":
-			mozilla = &res.DNS[i]
-		}
-	}
-	if sliver == nil || mozilla == nil {
-		t.Fatal("domains missing")
-	}
-	t.Logf("Luise per-name entropy: sliver mean %.2f max %.2f | mozilla mean %.2f", sliver.LuiseMean, sliver.LuiseMax, mozilla.LuiseMean)
-	t.Logf("cardinality raw %.2f → logical %.2f; positional %+v", sliver.RawCard, sliver.Cardinality, sliver.Positional)
-	// The paper's observation holds: per-name entropy can't separate them.
-	if sliver.LuiseMean > mozilla.LuiseMean+0.6 {
-		t.Errorf("premise: Sliver per-name entropy %.2f should look like mozilla %.2f", sliver.LuiseMean, mozilla.LuiseMean)
-	}
-	if sliver.RawCard > 0.4 || sliver.Cardinality < 0.95 {
-		t.Errorf("retry de-dup: raw %.2f (want ≈0.33), logical %.2f (want ≈1)", sliver.RawCard, sliver.Cardinality)
-	}
-	if sliver.Positional.Prefix != "baak" || sliver.Positional.Score < 0.8 || sliver.Positional.Remainder.Alphabet != "custom32" {
-		t.Errorf("positional: %+v", sliver.Positional)
-	}
-	f := findBy(res, CatDNS, "happytoseeyou.com")
-	if f == nil || f.Score < 0.85 || !hasSignal(f, "framing_prefix") || !hasSignal(f, "name_cardinality_ratio") {
-		t.Fatalf("Sliver DNS not critical: %+v", f)
-	}
-	if m := findBy(res, CatDNS, "mozilla.com"); m != nil && m.Score >= 0.2 {
-		t.Errorf("mozilla flagged %.2f", m.Score)
+// A Luise (2024)-style low-entropy DNS beacon: 12-char labels over a
+// 32-symbol alphabet, each name queried 3× (so the naive unique/total
+// ratio is ~0.33) and per-name entropy indistinguishable from
+// mozilla.com / gstatic.com. Some tunnels frame every name with a constant
+// prefix; the positional profiler must detect *whatever* constant prefix
+// exists (drawn from the seed here — no framework literal is assumed),
+// strip it, and score the varying columns as random; and on names with no
+// constant prefix it must report none and still score the varying columns
+// (v11a: the profiler's prefix is an observation, never an assumption —
+// see TestSliverDNSFalsification for the source-grounded wire study).
+func TestDNSConstantFramingPrefix(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		prefixLen int
+		wantPre   bool
+	}{
+		{"seed-drawn constant prefix", 4, true},
+		{"no constant prefix", 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := newSynth(t)
+			r := mrand.New(mrand.NewPCG(31, 32))
+			const alpha = "ab1c2d3e4f5g6h7j8k9m0npqrtuvwxyz"
+			prefix := ""
+			for len(prefix) < tc.prefixLen {
+				prefix += string(alpha[r.IntN(len(alpha))])
+			}
+			ts := s.now
+			id := uint16(1)
+			for i := 0; i < 300; i++ {
+				ts = ts.Add(time.Duration((2 + 0.4*(r.Float64()*2-1)) * float64(time.Second)))
+				lbl := []byte(prefix)
+				for len(lbl) < len(prefix)+8 {
+					lbl = append(lbl, alpha[r.IntN(len(alpha))])
+				}
+				name := string(lbl) + ".dns.happytoseeyou.com"
+				for rep := 0; rep < 3; rep++ {
+					at := ts.Add(time.Duration(rep*150) * time.Millisecond)
+					s.dnsQuery(at, "10.0.0.50", "10.0.0.53", name, layers.DNSTypeA, id)
+					s.dnsResp(at.Add(15*time.Millisecond), "10.0.0.50", "10.0.0.53", name, layers.DNSTypeA, id, layers.DNSResponseCodeNoErr,
+						[]layers.DNSResourceRecord{{Name: []byte(name), Type: layers.DNSTypeA, Class: layers.DNSClassIN, TTL: 0, IP: []byte{byte(r.IntN(255)), byte(r.IntN(255)), 0, 1}}})
+					id++
+				}
+			}
+			for i, n := range []string{"push.services.mozilla.com", "location.services.mozilla.com", "www.gstatic.com", "fonts.gstatic.com", "content-signature-2.cdn.mozilla.net"} {
+				for k := 0; k < 30; k++ {
+					at := s.now.Add(time.Duration(i*1000+k*37) * time.Second)
+					s.dnsQuery(at, "10.0.0.51", "10.0.0.53", n, layers.DNSTypeA, id)
+					s.dnsResp(at.Add(10*time.Millisecond), "10.0.0.51", "10.0.0.53", n, layers.DNSTypeA, id, layers.DNSResponseCodeNoErr,
+						[]layers.DNSResourceRecord{{Name: []byte(n), Type: layers.DNSTypeA, Class: layers.DNSClassIN, TTL: 300, IP: []byte{142, 250, 0, byte(i)}}})
+					id++
+				}
+			}
+			res := s.analyze(Config{})
+			var tunnel, mozilla *DNSDomainSummary
+			for i := range res.DNS {
+				switch res.DNS[i].Domain {
+				case "happytoseeyou.com":
+					tunnel = &res.DNS[i]
+				case "mozilla.com":
+					mozilla = &res.DNS[i]
+				}
+			}
+			if tunnel == nil || mozilla == nil {
+				t.Fatal("domains missing")
+			}
+			t.Logf("Luise per-name entropy: tunnel mean %.2f max %.2f | mozilla mean %.2f", tunnel.LuiseMean, tunnel.LuiseMax, mozilla.LuiseMean)
+			t.Logf("cardinality raw %.2f → logical %.2f; positional prefix=%q %+v", tunnel.RawCard, tunnel.Cardinality, tunnel.Positional.Prefix, tunnel.Positional)
+			// The paper's observation holds: per-name entropy can't separate them.
+			if tunnel.LuiseMean > mozilla.LuiseMean+0.6 {
+				t.Errorf("premise: tunnel per-name entropy %.2f should look like mozilla %.2f", tunnel.LuiseMean, mozilla.LuiseMean)
+			}
+			if tunnel.RawCard > 0.4 || tunnel.Cardinality < 0.95 {
+				t.Errorf("retry de-dup: raw %.2f (want ≈0.33), logical %.2f (want ≈1)", tunnel.RawCard, tunnel.Cardinality)
+			}
+			// Wherever a constant prefix exists it is found and stripped;
+			// where none exists none is reported. Either way the varying
+			// columns score as random over the custom-32 alphabet.
+			if got, want := tunnel.Positional.Prefix, prefix; got != want {
+				t.Errorf("positional prefix %q, want the planted %q", got, want)
+			}
+			if tunnel.Positional.Score < 0.8 || tunnel.Positional.Remainder.Alphabet != "custom32" {
+				t.Errorf("positional: %+v", tunnel.Positional)
+			}
+			f := findBy(res, CatDNS, "happytoseeyou.com")
+			if f == nil || f.Score < 0.85 || !hasSignal(f, "name_cardinality_ratio") {
+				t.Fatalf("low-entropy DNS beacon not detected: %+v", f)
+			}
+			if tc.wantPre && !hasSignal(f, "framing_prefix") {
+				t.Errorf("constant prefix present but framing_prefix missing: %v", signalNames(f))
+			}
+			if !tc.wantPre && hasSignal(f, "framing_prefix") {
+				t.Errorf("no constant prefix planted but framing_prefix fired: %v", signalNames(f))
+			}
+			if !hasSignal(f, "positional_randomness") {
+				t.Errorf("varying columns must score random with or without a prefix: %v", signalNames(f))
+			}
+			if m := findBy(res, CatDNS, "mozilla.com"); m != nil && m.Score >= 0.2 {
+				t.Errorf("mozilla flagged %.2f", m.Score)
+			}
+		})
 	}
 }
 
-// Mythic "dns" profile: base32 (RFC 4648, no padding) protobuf packets in
-// ≤63-char labels, data returned in multiple A records with TTL 0.
+// Synthetic DNS scenario assumption (not a verified Mythic profile): base32
+// labels, repeated A answers and TTL 0 exercise the detector's DNS behavior.
 func TestMythicDNSProfile(t *testing.T) {
 	s := newSynth(t)
 	r := mrand.New(mrand.NewPCG(41, 42))

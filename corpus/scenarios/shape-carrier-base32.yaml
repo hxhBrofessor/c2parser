@@ -1,0 +1,25 @@
+# v11a N1: HTTP GET channel carrying a fresh base32 token per request in the
+# query (?d=…) and a base32-encoded response body. Evidence, not attribution:
+# the carrier signal names the encoding, never a framework.
+name: shape-carrier-base32
+seed: 301
+streams:
+  - label: c2
+    shape: transport=http,carrier=query+body,encoding=base32
+    transport: http-keepalive
+    server: 198.51.100.101
+    name: cdn-base32.example
+    topology: {clients: [10.5.0.41]}
+    timing: {model: symmetric, sleep: 30, jitter: 0.3, events: 40}
+    content:
+      method: GET
+      uri: /api/status
+      encoding: base32
+      headers: ["User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept: */*"]
+      poll: {dist: uniform, min: 160, max: 240}
+      resp: {dist: uniform, min: 200, max: 300}
+expect:
+  - {engine: v1, server: 198.51.100.101, min: 0.65, evidence: encoded_payload_in_query}
+  - {engine: v1, server: 198.51.100.101, min: 0.65, evidence: encoded_payload_in_resp}
+  - {engine: v2, server: 198.51.100.101, min: 0.65, evidence: encoded_payload_in_query}
+  - {engine: v2, server: 198.51.100.101, min: 0.65, evidence: encoded_payload_in_resp}

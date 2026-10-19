@@ -2,7 +2,7 @@
 
 ![c2parser](docs/banner.png)
 
-Passive C2 and exfiltration detection for packet captures. Point it at a `.pcap` / `.pcapng` and it reports beaconing, framework default profiles, SMB named-pipe pivots, DNS tunnelling, upload-heavy exfil, DCE/RPC lateral movement and AD reconnaissance. Each finding comes with a scored list of the evidence behind it and the Wireshark frame numbers to check it.
+Passive C2 and exfiltration detection for packet captures. Point it at a `.pcap` / `.pcapng` and it reports beaconing, framework-pattern heuristics, SMB named-pipe pivots, DNS tunnelling, upload-heavy exfil, DCE/RPC lateral movement and AD reconnaissance. Each finding comes with a scored list of the evidence behind it and the Wireshark frame numbers to check it.
 
 It never sends traffic or touches hosts. It reads the capture and nothing else.
 
@@ -85,9 +85,15 @@ Each bullet is `score × weight` for one signal. Signals are combined by noisy-O
 | `-dc ips` | Known domain controllers (their replication isn't DCSync; their LDAP isn't recon) |
 | `-sigma dir` | Extra Sigma rules on top of the built-in and SigmaHQ sets |
 | `-timing v2` | Experimental timing engine (event models, calibrated nulls); `v1` is the default |
+| `-candidate-json path` | Write a separate, bounded JSON sidecar of unconfirmed Base32/Base58 interpretations; does not change findings |
 | `-no-banner` | Skip the startup banner (also `C2PARSER_NO_BANNER=1`). It only prints to an interactive terminal, on stderr, so pipes and `-json` stay clean; `NO_COLOR` gives a plain version |
 
 `c2parser -h` lists everything. Detection details, the JSON fields and the evaluation tooling are in [`docs/reference.md`](docs/reference.md).
+
+The normal decoder preserves the v10-compatible primary label and bytes.
+Base32/Base58 interpretations are optional alternate candidates: a valid
+decoding does not identify the encoding or imply protocol attribution. The
+candidate sidecar is a separate schema and is excluded from scoring.
 
 ## Sigma rules
 
@@ -101,3 +107,11 @@ make release    # binaries for macOS (arm64/amd64), Linux and Windows in dist/
 ```
 
 Lab-capture tests skip unless `C2PARSER_TESTDATA` points at a directory of captures. Captures never belong in this repo. The synthetic test corpus lives in `corpus/scenarios/` (see [`docs/corpus.md`](docs/corpus.md)).
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+MIT — see [LICENSE](LICENSE). Third-party components: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

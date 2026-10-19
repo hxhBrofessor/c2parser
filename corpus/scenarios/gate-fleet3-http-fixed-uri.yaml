@@ -1,0 +1,25 @@
+# v11a N2 cap gate: 3 internal clients polling one plain-HTTP URI on the
+# same cadence (a fleet pattern). uri_shape:fixed-uri fires under v2 and
+# must not lift the fleet cap (< 0.4): it maps to the timing family and
+# the timing+URI-shape guard also covers it (TestURIShapeCapMutations).
+name: gate-fleet3-http-fixed-uri
+seed: 311
+streams:
+  - label: benign
+    shape: fleet=3,uri=fixed
+    transport: http-keepalive
+    server: 198.51.100.111
+    name: agent-config.example
+    topology: {fleet: {base: 10.50.1.11, n: 3}, stagger: 7}
+    timing: {model: shortening, sleep: 60, jitter: 0.1, events: 60}
+    content:
+      method: GET
+      uri: /api/agent/checkin
+      encoding: text
+      headers: ["User-Agent: config-agent/3.2", "Accept: application/json"]
+      poll: {dist: fixed, min: 0}
+      resp: {dist: uniform, min: 200, max: 400}
+expect:
+  - {engine: v1, server: 198.51.100.111, client: 10.50.1.11, max: 0.39, evidence: "fleet-wide periodic destination (3 of 3 hosts)"}
+  - {engine: v2, server: 198.51.100.111, client: 10.50.1.11, max: 0.39, evidence: "uri_shape:fixed-uri"}
+  - {engine: v2, server: 198.51.100.111, client: 10.50.1.13, max: 0.39}

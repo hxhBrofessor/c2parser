@@ -83,6 +83,9 @@ type smbFile struct {
 	magicHits   int
 	mythicHits  int
 	magicFrames []int64
+	frames      *frameTrack  // v11a N3: candidate constant frame headers (pipes only)
+	residue     *residuePair // v11a M2: decoded message lengths (pipes only)
+	residFirst  residueFirst // v11a F06: first eligible length per direction
 	dce         *dceState
 	sigs        map[string]int
 	first, last time.Time
@@ -179,6 +182,13 @@ func (f *smbFile) addData(data []byte, write bool, ts time.Time, frame int64) {
 		if len(f.magicFrames) < 10 {
 			f.magicFrames = append(f.magicFrames, frame)
 		}
+	}
+	if f.Share == "" || strings.HasSuffix(strings.ToUpper(f.Share), `\IPC$`) {
+		if f.frames == nil {
+			f.frames = &frameTrack{}
+		}
+		f.frames.observe(data, write)
+		f.notePipeResidue(data, write)
 	}
 	head := data
 	if len(head) > headSample {
@@ -589,6 +599,19 @@ func (dst *smbFile) mergeFrom(f *smbFile) {
 	dst.hist.Merge(&f.hist)
 	dst.magicHits += f.magicHits
 	dst.mythicHits += f.mythicHits
+	if f.frames != nil {
+		if dst.frames == nil {
+			dst.frames = &frameTrack{}
+		}
+		dst.frames.merge(f.frames)
+	}
+	dst.residue = mergeResidue(dst.residue, f.residue)
+	for d, n := range f.residFirst {
+		if n > 0 {
+			observeResidue(&dst.residue, &dst.residFirst, d, n, nil, nil)
+		}
+	}
+	flushResidueFirst(dst.residue, &dst.residFirst)
 	for _, fr := range f.magicFrames {
 		if len(dst.magicFrames) < 10 {
 			dst.magicFrames = append(dst.magicFrames, fr)

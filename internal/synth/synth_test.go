@@ -295,7 +295,7 @@ func TestContentShapes(t *testing.T) {
 	if len(k.key) != 8 {
 		t.Errorf("xor key length %d", len(k.key))
 	}
-	for _, enc := range []string{"base64", "base64url", "base32", "hex", "netbios", "text"} {
+	for _, enc := range []string{"base64", "base64url", "base32", "base58", "words", "hex", "netbios", "text"} {
 		k, _ := newKeyed(Content{Encoding: enc}, r)
 		b := k.body(r, 64)
 		for _, c := range b {
@@ -311,6 +311,41 @@ func TestContentShapes(t *testing.T) {
 	}
 	if f := Frame("be12", []byte("abc")); len(f) != 15 || f[3] != 3 {
 		t.Errorf("be12 %x", f)
+	}
+}
+
+// v11a encoders: base58 against a published vector, round trips, word
+// letter sums, the constant wrapper.
+func TestV11aEncoders(t *testing.T) {
+	if got := Base58([]byte("Hello World!")); got != "2NEpo7TZRRrLZSi2U" {
+		t.Errorf("base58 vector: %s", got)
+	}
+	if got := Base58([]byte{0, 0, 1}); got != "112" {
+		t.Errorf("base58 leading zeros: %s", got)
+	}
+	r := rand.New(rand.NewPCG(5, 5))
+	b := RandBytes(r, 300)
+	ws := strings.Fields(Words(b))
+	if len(ws) != len(b) {
+		t.Fatalf("words: %d for %d bytes", len(ws), len(b))
+	}
+	for i, w := range ws {
+		if byte(letterSum(w)) != b[i] {
+			t.Fatalf("word %d %q sums to %d, want %d", i, w, byte(letterSum(w)), b[i])
+		}
+	}
+	if Words(b) != Words(b) {
+		t.Error("words not deterministic")
+	}
+	k, err := newKeyed(Content{Encoding: "base32", Wrap: [2]string{"SESSIONID=", ";"}}, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := string(k.body(r, 40)); !strings.HasPrefix(body, "SESSIONID=") || !strings.HasSuffix(body, ";") {
+		t.Errorf("wrap: %q", body)
+	}
+	if _, err := newKeyed(Content{Encoding: "base99"}, r); err == nil {
+		t.Error("unknown encoding accepted")
 	}
 }
 

@@ -66,24 +66,47 @@ func matchSignatures(head []byte) []signature {
 	return out
 }
 
+// knownFrameMagics is the table of known C2 frame magics (v11a N3; a Go
+// constant here, the v11b profile YAML later). Each sits right after a
+// 4-byte big-endian length: Havoc Demon [u32 size][0xDEADBEEF][agent id].
+var knownFrameMagics = [][]byte{{0xde, 0xad, 0xbe, 0xef}}
+
 // containsC2Magic scans a whole buffer (not just its head) for framing
 // that has been embedded in another protocol, e.g. Havoc inside SMB pipe
 // reads. Returns the number of hits.
 func containsC2Magic(b []byte) int {
-	n := 0
-	magic := []byte{0xde, 0xad, 0xbe, 0xef}
-	for i := 0; ; {
-		j := bytes.Index(b[i:], magic)
-		if j < 0 {
-			return n
+	n, _ := containsFramePrefix(b, knownFrameMagics)
+	return n
+}
+
+// containsFramePrefix generalises containsC2Magic over a table of frame
+// magics: it counts occurrences of any prefix that follow a plausible
+// big-endian length (8 B … 64 MB), and returns the first prefix that hit.
+// With the one-entry table it counts exactly what v10's 0xDEADBEEF scan did.
+func containsFramePrefix(b []byte, prefixes [][]byte) (hits int, which []byte) {
+	for _, magic := range prefixes {
+		if len(magic) == 0 {
+			continue
 		}
-		pos := i + j
-		if pos >= 4 {
-			size := binary.BigEndian.Uint32(b[pos-4:])
-			if size >= 8 && size < 64<<20 {
-				n++
+		n := 0
+		for i := 0; ; {
+			j := bytes.Index(b[i:], magic)
+			if j < 0 {
+				break
 			}
+			pos := i + j
+			if pos >= 4 {
+				size := binary.BigEndian.Uint32(b[pos-4:])
+				if size >= 8 && size < 64<<20 {
+					n++
+				}
+			}
+			i = pos + len(magic)
 		}
-		i = pos + 4
+		if n > 0 && which == nil {
+			which = magic
+		}
+		hits += n
 	}
+	return hits, which
 }
