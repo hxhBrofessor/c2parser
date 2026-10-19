@@ -1,0 +1,23 @@
+title: Mythic C2 websocket Profile Default Endpoint
+id: 96cd9d1f-db8e-4ce1-9e7d-18e7518af576
+status: experimental
+description: 'Detects the default Mythic ''websocket'' C2 profile upgrade request (ENDPOINT_REPLACE=socket, default USER_AGENT).'
+references:
+    - https://docs.mythic-c2.net/
+    - https://github.com/MythicC2Profiles
+author: c2parser
+date: 2026-10-14
+tags:
+    - attack.command-and-control
+    - attack.t1071
+logsource:
+    category: proxy
+detection:
+    selection:
+        cs-method: 'GET'
+        c-uri-stem: '/socket'
+        c-useragent: 'Mozilla/5.0 (Windows NT 6.3; Trident/7.0; rv:11.0) like Gecko'
+    condition: selection
+falsepositives:
+    - Unlikely
+level: high

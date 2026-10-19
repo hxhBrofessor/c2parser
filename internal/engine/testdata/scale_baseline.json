@@ -1,0 +1,28 @@
+{
+  "v9.0": {
+    "200000": {
+      "conns": 200036,
+      "packets": 1720338,
+      "wall_sec": 13.825024559,
+      "mb_per_sec": 19.438582547486167,
+      "pkt_per_sec": 124436.52397565337,
+      "conn_per_sec": 14469.124387180773,
+      "rss_per_conn_kb": 5.5101681697294485,
+      "peak_rss_mb": 1111.5,
+      "needle_rank": 1,
+      "machine": "linux/amd64, 2 CPUs"
+    },
+    "500000": {
+      "conns": 500030,
+      "packets": 4300352,
+      "wall_sec": 40.821980787,
+      "mb_per_sec": 16.452464121409868,
+      "pkt_per_sec": 105344.03076710751,
+      "conn_per_sec": 12249.038149546077,
+      "rss_per_conn_kb": 4.511897286162831,
+      "peak_rss_mb": 2238.6640625,
+      "needle_rank": 1,
+      "machine": "linux/amd64, 2 CPUs"
+    }
+  }
+}

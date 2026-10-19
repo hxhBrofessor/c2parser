@@ -1,0 +1,46 @@
+# v9c D3 gates in a 20-host capture: the fleet reason needs
+# max(3, 25 % of 20) = 5 hosts. A timing-only beacon on 2 or 3 hosts keeps
+# its score; a timing-only schedule on 15 hosts is capped with the
+# fleet-wide annotation.
+name: gate-fleet20
+seed: 306
+streams:
+  - label: benign
+    shape: background=20
+    transport: https-new-conn
+    server: 198.51.100.95
+    name: www.example.org
+    topology: {fleet: {base: 10.60.0.1, n: 20}}
+    timing: {model: poisson, sleep: 900, events: 8}
+    content: {poll: {dist: uniform, min: 300, max: 900}, resp: {dist: uniform, min: 2000, max: 9000}}
+  - label: c2
+    shape: hosts=2,polarity=shortening
+    transport: https-keepalive
+    server: 198.51.100.91
+    name: two.example
+    topology: {fleet: {base: 10.60.0.1, n: 2}, stagger: 7}
+    timing: {model: shortening, sleep: 60, jitter: 0.1, events: 60}
+    content: {poll: {min: 35}, resp: {min: 85}}
+  - label: c2
+    shape: hosts=3,polarity=shortening
+    transport: https-keepalive
+    server: 198.51.100.92
+    name: three.example
+    topology: {fleet: {base: 10.60.0.3, n: 3}, stagger: 7}
+    timing: {model: shortening, sleep: 60, jitter: 0.1, events: 60}
+    content: {poll: {min: 35}, resp: {min: 85}}
+  - label: benign
+    shape: hosts=15,polarity=symmetric
+    transport: https-keepalive
+    server: 198.51.100.93
+    name: agent.example
+    topology: {fleet: {base: 10.60.0.6, n: 15}, stagger: 11}
+    timing: {model: symmetric, sleep: 300, jitter: 0.1, events: 40}
+    content: {poll: {min: 35}, resp: {min: 85}}
+expect:
+  - {engine: v1, server: 198.51.100.91, client: 10.60.0.1, min: 0.6}
+  - {engine: v2, server: 198.51.100.91, client: 10.60.0.2, min: 0.6}
+  - {engine: v1, server: 198.51.100.92, client: 10.60.0.3, min: 0.6}
+  - {engine: v2, server: 198.51.100.92, client: 10.60.0.5, min: 0.6}
+  - {engine: v1, server: 198.51.100.93, client: 10.60.0.6, max: 0.39, evidence: "fleet-wide periodic destination (15 of 20 hosts)"}
+  - {engine: v2, server: 198.51.100.93, client: 10.60.0.20, max: 0.39, evidence: "fleet-wide periodic destination (15 of 20 hosts)"}

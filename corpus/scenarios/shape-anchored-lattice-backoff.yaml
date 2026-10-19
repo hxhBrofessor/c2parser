@@ -1,0 +1,27 @@
+name: shape-anchored-lattice-backoff
+seed: 212
+streams:
+  - label: c2
+    shape: polarity=anchored
+    transport: https-new-conn
+    server: 198.51.100.76
+    name: a.example
+    topology: {clients: [10.5.0.34]}
+    timing: {model: anchored, sleep: 60, jitter: 0.2, events: 60}
+    content: {poll: {min: 300}, resp: {dist: uniform, min: 100, max: 400}}
+  - label: c2
+    shape: lattice=1s
+    transport: https-new-conn
+    server: 198.51.100.77
+    name: b.example
+    topology: {clients: [10.5.0.35]}
+    timing: {model: lattice, sleep: 30, jitter: 0.2, events: 60}
+    content: {poll: {min: 300}, resp: {dist: uniform, min: 100, max: 400}}
+  - label: c2
+    shape: backoff=2x
+    transport: https-new-conn
+    server: 198.51.100.78
+    name: c.example
+    topology: {clients: [10.5.0.36]}
+    timing: {model: backoff, sleep: 10, factor: 2, max: 160, events: 60}
+    content: {poll: {min: 300}, resp: {dist: uniform, min: 100, max: 400}}

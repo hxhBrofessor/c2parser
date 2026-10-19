@@ -1,0 +1,22 @@
+# Phase 0.1 gate: single-host timing-only HTTPS series, 10 % shortening
+# jitter, no other tell. Must keep its timing score (>= 0.6) but stay
+# below critical (<= 0.84) under both engines. v1's raw score depends on
+# the drawn sizes (0.51-0.64 over 30 seeds); TestCapGateSeedSweep gates its
+# median and checks the cap is never applied.
+name: gate-single-https-keepalive-60s
+seed: 102
+streams:
+  - label: c2
+    shape: polarity=shortening,jitter=0.1
+    transport: https-keepalive
+    server: 198.51.100.41
+    name: cdn-update.example
+    topology: {clients: [10.5.0.16]}
+    timing: {model: shortening, sleep: 60, jitter: 0.1, events: 60}
+    content:
+      alpn: [http/1.1]
+      poll: {dist: uniform, min: 350, max: 389}
+      resp: {dist: uniform, min: 200, max: 599}
+expect:
+  - {engine: v1, server: 198.51.100.41, min: 0.5, max: 0.84, note: "v1 raw score varies 0.51-0.64 by seed; median >= 0.6 gated in TestCapGateSeedSweep"}
+  - {engine: v2, server: 198.51.100.41, min: 0.6, max: 0.84}

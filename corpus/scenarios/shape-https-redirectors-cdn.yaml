@@ -1,0 +1,14 @@
+# One name behind 4 redirector IPs, picked at random per check-in (K1 fixture).
+name: shape-https-redirectors-cdn
+seed: 207
+streams:
+  - label: c2
+    shape: redirectors=4,polarity=shortening
+    transport: https-new-conn
+    server: 203.0.113.10
+    name: assets.example
+    topology:
+      clients: [10.5.0.27]
+      redirectors: {mode: cdn, ips: [203.0.113.10, 203.0.113.11, 203.0.113.12, 203.0.113.13]}
+    timing: {model: shortening, sleep: 60, jitter: 0.2, events: 60}
+    content: {poll: {dist: uniform, min: 300, max: 400}, resp: {dist: uniform, min: 100, max: 900}}

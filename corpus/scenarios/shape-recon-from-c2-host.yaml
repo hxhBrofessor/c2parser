@@ -1,0 +1,27 @@
+# v10a 2.2: an HTTPS beacon host that also runs attack-shaped LDAP queries
+# (delegation and AS-REP bit tests, SPN hunt, paged ACL collection) against
+# the DC. The recon joins the C2 finding as recon_from_c2_host with the
+# filters as evidence; it makes no separate recon finding.
+name: shape-recon-from-c2-host
+seed: 1002
+streams:
+  - label: c2
+    shape: hosts=1,polarity=shortening
+    transport: https-keepalive
+    server: 198.51.100.140
+    name: cdn-telemetry.example
+    topology: {clients: [10.82.0.5]}
+    timing: {model: shortening, sleep: 30, jitter: 0.1, events: 80}
+    content: {poll: {min: 120}, resp: {dist: uniform, min: 80, max: 400}}
+  - label: c2
+    shape: recon=ldap
+    transport: ldap
+    server: 10.82.0.10
+    topology: {clients: [10.82.0.5]}
+    timing: {model: poisson, sleep: 300, events: 3}
+    content: {preset: recon}
+expect:
+  - {engine: v1, server: 198.51.100.140, min: 0.6, evidence: "recon_from_c2_host", note: "recon joins the beacon"}
+  - {engine: v2, server: 198.51.100.140, min: 0.6, evidence: "AD recon:", note: "filters as evidence"}
+  - {engine: v1, category: recon, server: 10.82.0.10, max: 0.01, note: "no standalone recon from a C2 host"}
+  - {engine: v2, category: recon, server: 10.82.0.10, max: 0.01, note: "no standalone recon from a C2 host"}

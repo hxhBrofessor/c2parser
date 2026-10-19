@@ -1,0 +1,16 @@
+# v10a.1 gate: an admin workstation browsing ADUC through the day — two OU
+# listings and four Security tabs per session. Below the ACL-sweep
+# threshold (10 distinct objects in 10 min); no recon finding.
+name: benign-aduc-browsing
+seed: 1006
+streams:
+  - label: benign
+    shape: benign=aduc
+    transport: ldap
+    server: 10.85.0.10
+    topology: {clients: [10.85.0.31]}
+    timing: {model: poisson, sleep: 3600, events: 6}
+    content: {preset: aduc}
+expect:
+  - {engine: v1, category: any, server: 10.85.0.10, max: 0.19, note: "ADUC browsing"}
+  - {engine: v2, category: any, server: 10.85.0.10, max: 0.19, note: "ADUC browsing"}

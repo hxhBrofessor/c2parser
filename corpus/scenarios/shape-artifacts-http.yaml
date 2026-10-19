@@ -1,0 +1,30 @@
+# Every schedule artifact on one HTTP POST channel: missed beats, tasking
+# bursts, a stall, a sleep change, working hours and a second implant.
+name: shape-artifacts-http
+seed: 210
+start: 2024-03-25T07:00:00Z
+streams:
+  - label: c2
+    shape: polarity=shortening,encoding=base64,residue=4,xor=8,artifacts=all
+    transport: http-keepalive
+    server: 198.51.100.74
+    name: news.example
+    topology: {clients: [10.5.0.29]}
+    timing: {model: shortening, sleep: 60, jitter: 0.2, events: 150}
+    artifacts:
+      missed: 0.05
+      tasking: {every: 25, burst: 4, gap: 2, resp_bytes: 4000}
+      stalls: [{after: 40, seconds: 900}]
+      sleep_change: {after: 80, sleep: 120, jitter: 0.2}
+      working_hours: {start: 8, end: 18}
+      second_implant: {model: symmetric, sleep: 300, jitter: 0.1, events: 20}
+    content:
+      method: POST
+      uri: /api/v1/update
+      encoding: base64
+      residue: "4"
+      xor_key: 8
+      pad: [0, 32]
+      headers: ["User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept: */*"]
+      poll: {dist: uniform, min: 40, max: 80}
+      resp: {dist: normal, mean: 120, sd: 30, min: 16}

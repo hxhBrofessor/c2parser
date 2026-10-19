@@ -1,0 +1,12 @@
+# SMB named-pipe channel with a fixed 4-byte header and residue 4.
+name: shape-smb-pipe-framed
+seed: 202
+streams:
+  - label: c2
+    shape: transport=smb-pipe,header=4B,residue=4
+    transport: smb-pipe
+    server: 10.5.0.30
+    name: diagsvc
+    topology: {clients: [10.5.0.22]}
+    timing: {model: lengthening, sleep: 10, jitter: 0.3, events: 60}
+    content: {header: "c0ffee01", residue: "4", poll: {dist: uniform, min: 20, max: 60}, resp: {dist: uniform, min: 20, max: 400}}

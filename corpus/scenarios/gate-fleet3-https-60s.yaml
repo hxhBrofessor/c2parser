@@ -1,0 +1,22 @@
+# Phase 0.1 gate: the same cadence from 3 internal clients to one
+# destination is a fleet pattern; the timing-only cap applies (< 0.4).
+# v9c: the capture has 3 active hosts, so max(3, 25 % of 3) = 3 are needed.
+name: gate-fleet3-https-60s
+seed: 120
+streams:
+  - label: benign
+    shape: fleet=3,polarity=shortening
+    transport: https-keepalive
+    server: 198.51.100.50
+    name: updates.example
+    topology: {fleet: {base: 10.50.0.11, n: 3}, stagger: 7}
+    timing: {model: shortening, sleep: 60, jitter: 0.1, events: 60}
+    content:
+      alpn: [http/1.1]
+      poll: {dist: uniform, min: 350, max: 389}
+      resp: {dist: uniform, min: 200, max: 599}
+expect:
+  - {engine: v1, server: 198.51.100.50, client: 10.50.0.11, max: 0.39, evidence: "fleet-wide periodic destination (3 of 3 hosts)"}
+  - {engine: v2, server: 198.51.100.50, client: 10.50.0.11, max: 0.39, evidence: "fleet-wide periodic destination (3 of 3 hosts)"}
+  - {engine: v1, server: 198.51.100.50, client: 10.50.0.13, max: 0.39}
+  - {engine: v2, server: 198.51.100.50, client: 10.50.0.13, max: 0.39}

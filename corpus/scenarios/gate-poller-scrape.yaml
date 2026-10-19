@@ -1,0 +1,50 @@
+# v9c D2a gate: one internal client scraping 4 internal servers every 15 s
+# (monitoring) is an internal poller: timing-only findings capped (< 0.4).
+name: gate-poller-scrape
+seed: 301
+streams:
+  - label: benign
+    shape: poller=4,period=15s
+    transport: http-keepalive
+    server: 10.70.0.21
+    port: 9100
+    name: "10.70.0.21:9100"
+    topology: {clients: [10.70.0.5]}
+    timing: {model: prometheus, events: 200}
+    content: {uri: /metrics, encoding: text, headers: ["User-Agent: Prometheus/2.45.0", "Accept: text/plain"], resp: {dist: uniform, min: 20000, max: 24000}}
+  - label: benign
+    shape: poller=4,period=15s
+    transport: http-keepalive
+    server: 10.70.0.22
+    port: 9100
+    name: "10.70.0.22:9100"
+    topology: {clients: [10.70.0.5]}
+    timing: {model: prometheus, events: 200}
+    content: {uri: /metrics, encoding: text, headers: ["User-Agent: Prometheus/2.45.0", "Accept: text/plain"], resp: {dist: uniform, min: 20000, max: 24000}}
+  - label: benign
+    shape: poller=4,period=15s
+    transport: http-keepalive
+    server: 10.70.0.23
+    port: 9100
+    name: "10.70.0.23:9100"
+    topology: {clients: [10.70.0.5]}
+    timing: {model: prometheus, events: 200}
+    content: {uri: /metrics, encoding: text, headers: ["User-Agent: Prometheus/2.45.0", "Accept: text/plain"], resp: {dist: uniform, min: 20000, max: 24000}}
+  - label: benign
+    shape: poller=4,period=15s
+    transport: http-keepalive
+    server: 10.70.0.24
+    port: 9100
+    name: "10.70.0.24:9100"
+    topology: {clients: [10.70.0.5]}
+    timing: {model: prometheus, events: 200}
+    content: {uri: /metrics, encoding: text, headers: ["User-Agent: Prometheus/2.45.0", "Accept: text/plain"], resp: {dist: uniform, min: 20000, max: 24000}}
+expect:
+  - {engine: v1, server: 10.70.0.21, max: 0.39, evidence: "internal poller (4 targets)"}
+  - {engine: v2, server: 10.70.0.21, max: 0.39, evidence: "internal poller (4 targets)"}
+  - {engine: v1, server: 10.70.0.22, max: 0.39, evidence: "internal poller (4 targets)"}
+  - {engine: v2, server: 10.70.0.22, max: 0.39, evidence: "internal poller (4 targets)"}
+  - {engine: v1, server: 10.70.0.23, max: 0.39, evidence: "internal poller (4 targets)"}
+  - {engine: v2, server: 10.70.0.23, max: 0.39, evidence: "internal poller (4 targets)"}
+  - {engine: v1, server: 10.70.0.24, max: 0.39, evidence: "internal poller (4 targets)"}
+  - {engine: v2, server: 10.70.0.24, max: 0.39, evidence: "internal poller (4 targets)"}

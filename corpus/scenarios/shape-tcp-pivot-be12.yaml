@@ -1,0 +1,11 @@
+name: shape-tcp-pivot-be12
+seed: 206
+streams:
+  - label: c2
+    shape: transport=tcp-pivot,framing=be12
+    transport: tcp-pivot
+    server: 10.5.0.32
+    port: 9001
+    topology: {clients: [10.5.0.26]}
+    timing: {model: symmetric, sleep: 10, jitter: 0.2, events: 80}
+    content: {framing: be12, poll: {dist: uniform, min: 16, max: 32}, resp: {dist: uniform, min: 16, max: 64}}

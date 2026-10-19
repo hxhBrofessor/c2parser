@@ -1,0 +1,16 @@
+# v9c D2c gate: WireGuard keep-alive shape (32 B both ways, 25 s) off UDP 53
+# is a benign transport keep-alive: capped (< 0.4).
+name: gate-wireguard-51820
+seed: 304
+streams:
+  - label: benign
+    shape: wireguard-keepalive,port=51820
+    transport: udp
+    server: 198.51.100.80
+    port: 51820
+    topology: {clients: [10.6.0.10]}
+    timing: {model: wireguard, events: 200}
+    content: {poll: {min: 32}, resp: {min: 32}}
+expect:
+  - {engine: v1, server: 198.51.100.80, max: 0.39, evidence: "WireGuard keep-alive"}
+  - {engine: v2, server: 198.51.100.80, max: 0.39, evidence: "WireGuard keep-alive"}

@@ -1,0 +1,23 @@
+title: Havoc C2 Default HTTP Profile Request
+id: e1f2bf20-99bc-4774-88ca-cd59024338dc
+status: experimental
+description: 'Havoc''s default listener profile: Chrome 96 / Windows 7 User-Agent, POST with the invalid request Content-Type ''*/*''. Observed in the 304th CY BN Havoc lab captures. cs-content-type is a c2parser-provided field.'
+references:
+    - https://docs.mythic-c2.net/
+    - https://github.com/MythicC2Profiles
+author: c2parser
+date: 2026-10-14
+tags:
+    - attack.command-and-control
+    - attack.t1071
+logsource:
+    category: proxy
+detection:
+    selection:
+        cs-method: 'POST'
+        c-useragent: 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36'
+        cs-content-type: '\*/\*'  # escaped: a literal */*, not a wildcard
+    condition: selection
+falsepositives:
+    - Unlikely
+level: high

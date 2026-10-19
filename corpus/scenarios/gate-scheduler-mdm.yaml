@@ -1,0 +1,16 @@
+# v9c D2b gate: MDM check-in ladder (3 min ×5, 15 min ×8, then ~8 h with
+# push syncs) on one client: scheduler shape, capped (< 0.4).
+name: gate-scheduler-mdm
+seed: 302
+streams:
+  - label: benign
+    shape: scheduler=mdm-ladder
+    transport: https-new-conn
+    server: 198.51.100.85
+    name: mdm.example.net
+    topology: {clients: [10.6.0.16]}
+    timing: {model: intune, events: 40}
+    content: {poll: {min: 900}, resp: {min: 1500}}
+expect:
+  - {engine: v1, server: 198.51.100.85, max: 0.39, evidence: "MDM check-in ladder"}
+  - {engine: v2, server: 198.51.100.85, max: 0.39, evidence: "MDM check-in ladder"}

@@ -1,0 +1,94 @@
+# c2parser eval manifest, schema version 2 (v10a; internal/eval/manifest.go).
+#
+#   c2parser eval -manifest eval-manifest.yaml -out eval-out [-j 4] [-calibrate]
+#   c2parser eval -manifest eval-manifest.yaml -check     # validate + check files, no run
+#
+# Decoding is strict: an unknown key anywhere is an error. Paths are
+# relative to this file; globs are allowed. Missing files fail the run (a
+# run on half a dataset would print numbers that look complete).
+# Manifests without `version:` are read as the v8/v9 layout (benign: true,
+# c2: [endpoints], background_benign), which still works.
+#
+# role:    c2     labelled series are positives; everything else in the
+#                 capture is unverified background (excluded from FP stats)
+#          benign every series is a negative; sets operating points
+#          mixed  labelled series are positives, the rest negatives
+# labels:  none | zeek-uid | per-capture | time-window
+# licence: ccby (TQH-C2, CC BY 4.0) | internal (never commit; aggregate
+#          tables only) | own | synthetic
+#
+# Thresholds are the benign 1 − 1e-4 quantile of each score (Neyman–
+# Pearson); positives only measure power, so never tune on them. A report
+# built only from synthetic captures (synthetic: true, licence: synthetic,
+# or a synthgen "synth:" framework) carries the synthetic banner and emits
+# no operating points with fewer than 1,000 benign series.
+version: 2
+name: example
+# internal: [10.0.0.0/8, 192.168.0.0/16]   # overrides -internal for every capture
+# columns: {uid: uid}                      # default Zeek column map (see labels.columns)
+captures:
+  # Benign denominators first (docs/datasets/benign-capture.md). Rotated
+  # segments of one capture are one run, ingested in name order.
+  - path: benign/win11/win11_*.pcapng
+    role: benign
+    rotated: true
+    licence: own
+    expected_host_hours: 72     # one host × 72 h; the report flags > 10 % off
+  - path: benign/linux/linux_*.pcapng
+    role: benign
+    rotated: true
+    licence: own
+    expected_host_hours: 48
+
+  # TQH-C2 v1.2.2 (Zenodo 22732327; docs/datasets/tqh-c2.md). Labels join
+  # by Zeek UID: conn.log rows ↔ c2parser connections (exact 5-tuple either
+  # direction, start within ±1 s). Every column name is configurable until
+  # README_v122.md confirms the schema.
+  - path: tqh/C_mythic_http/300s_30pct/*.pcap
+    role: mixed
+    licence: ccby
+    framework: mythic           # blank fields are filled from the label file's majority value
+    transport: http
+    sleep: 300
+    jitter: 30
+    labels:
+      source: zeek-uid
+      conn_log: tqh/C_mythic_http/300s_30pct/conn.log*      # TSV or JSON, plain or .gz
+      label_file: tqh/labels/labeled.jsonl                  # JSON lines, Zeek TSV or CSV; omit to read `label` from conn.log
+      positive: [c2, malicious]
+      min_join: 0.95            # fail the run below this matched fraction (0 = report only)
+      columns:                  # defaults shown
+        ts: ts
+        uid: uid
+        orig_h: id.orig_h
+        orig_p: id.orig_p
+        resp_h: id.resp_h
+        resp_p: id.resp_p
+        proto: proto
+        label: label
+        # framework / transport / sleep / jitter: optional per-row metadata columns in the label file
+
+  # Lab capture, labelled per capture
+  - path: lab/http_c2_enum.pcapng
+    role: c2
+    licence: own
+    framework: havoc
+    transport: http
+    sleep: 5
+    jitter: 0
+    tasking: "yes"
+    labels:
+      source: per-capture
+      c2:
+        - {client: 192.168.1.32, server: 100.113.27.34}
+
+  # Time-window labels: positive when the endpoints match and an event
+  # falls inside the window (RFC 3339 or unix seconds)
+  - path: lab/red-team-day.pcapng
+    role: mixed
+    licence: internal
+    framework: unknown
+    labels:
+      source: time-window
+      windows:
+        - {start: "2026-09-01T13:00:00Z", end: "2026-09-01T17:30:00Z", client: 10.1.2.3}

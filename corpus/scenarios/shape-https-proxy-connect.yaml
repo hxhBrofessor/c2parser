@@ -1,0 +1,17 @@
+# HTTPS beacon through an HTTP CONNECT proxy (TLS 1.2 inside). v9c 2.3:
+# the inner ClientHello is parsed and the series is keyed by the CONNECT
+# target name (K1).
+name: shape-https-proxy-connect
+seed: 208
+streams:
+  - label: c2
+    shape: proxy=connect,polarity=symmetric
+    transport: https-keepalive
+    server: 198.51.100.72
+    name: api.example
+    topology: {clients: [10.5.0.28], proxy: "10.0.0.8:3128"}
+    timing: {model: symmetric, sleep: 30, jitter: 0.15, events: 60}
+    content: {tls: "1.2", poll: {dist: uniform, min: 200, max: 260}, resp: {dist: uniform, min: 100, max: 500}}
+expect:
+  - {engine: v1, server: api.example, min: 0.5, evidence: "inner TLS SNI: api.example"}
+  - {engine: v2, server: api.example, min: 0.6, evidence: "inner TLS SNI: api.example"}

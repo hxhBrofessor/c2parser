@@ -1,0 +1,20 @@
+# Phase 0.1 gate: single-host timing-only HTTPS series, 10 % shortening
+# jitter, no other tell. Must keep its timing score (>= 0.6) but stay
+# below critical (<= 0.84) under both engines.
+name: gate-tiny-bursts-45s
+seed: 106
+streams:
+  - label: c2
+    shape: polarity=shortening,size=tiny
+    transport: https-keepalive
+    server: 198.51.100.41
+    name: cdn-update.example
+    topology: {clients: [10.5.0.16]}
+    timing: {model: shortening, sleep: 45, jitter: 0.1, events: 60}
+    content:
+      alpn: [h2]
+      poll: {min: 35}
+      resp: {min: 85}
+expect:
+  - {engine: v1, server: 198.51.100.41, min: 0.6, max: 0.84}
+  - {engine: v2, server: 198.51.100.41, min: 0.6, max: 0.84}

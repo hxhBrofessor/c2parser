@@ -1,0 +1,13 @@
+# DNS check-ins via an internal resolver: base32 query labels, TXT answers.
+name: shape-dns-txt-base32
+seed: 201
+streams:
+  - label: c2
+    shape: transport=dns,encoding=base32,polarity=symmetric
+    transport: dns
+    server: 10.0.0.53
+    name: t.example.net
+    topology: {clients: [10.5.0.21]}
+    timing: {model: symmetric, sleep: 30, jitter: 0.2, events: 80}
+    artifacts: {missed: 0.05}
+    content: {qtype: TXT, encoding: base32, poll: {dist: uniform, min: 8, max: 40}, resp: {dist: uniform, min: 4, max: 60}}

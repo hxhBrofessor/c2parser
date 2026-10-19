@@ -1,0 +1,19 @@
+# build output
+/c2parser
+/c2parser.exe
+/dist/
+*.test
+*.out
+
+# captures and derived data never go in the repo
+*.pcap
+*.pcapng
+*.cap
+*.pcap.gz
+*.pcapng.gz
+eval-out/
+
+# local
+.DS_Store
+.idea/
+.vscode/
