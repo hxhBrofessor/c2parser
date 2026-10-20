@@ -1,6 +1,6 @@
 # c2parser v11a review — neutral C2 catch-all layer
 
-_2026-10-17. Documents the v11a engineering review based on v10.0. No v11a tag or release has been published; v11.0 is planned after v11b. Each item lists spec → observed behavior → resolution → evidence. Results are from local Darwin/arm64 runs with Go 1.27.2. Lab-dependent claims are under "Not verified here" and are **not** claimed as passed._
+_2026-10-17 (historical review; v11a was later published 2026-10-19). Documents the v11a engineering review based on v10.0. The `v11a` tag points to `425897e8c36005e001e6f6254ede16117194f9d2`; release assets are identified by `SHA256SUMS`. v11.0 is planned after v11b. Each item lists spec → observed behavior → resolution → evidence. Results are from local Darwin/arm64 runs with Go 1.27.2. Lab-dependent claims are under "Not verified here" and are **not** claimed as passed._
 
 > **D01 correction (2026-10-18):** This is a historical engineering review,
 > not current release acceptance. The original N1 decoder-precedence account
@@ -132,7 +132,7 @@ Evidence: `residue_test.go` (classes ≡0/≡4/≡12 mod 16, ≡4 mod 8, uniform
 - **NetSupport:** NOT_APPLICABLE by human-owner decision because no sample will be supplied; this is not a test PASS.
 - Sliver source provenance: a local snapshot is now available under `_reference-sources/sliver/`, but its ZIP commit identity is unverified. The snapshot supports only narrowly cited static facts; synthetic model assumptions and cross-version equivalence remain unverified.
 - The Linux `TestScaleFlowHeavy` RSS gate.
-- Public v11a release archive, release binaries and tag: not published. Four candidate binaries and a candidate review evidence ZIP are preserved locally for owner review only; they are not public release assets.
+- Public v11a release archive, release binaries and tag were published 2026-10-19 (`v11a` → `425897e8c36005e001e6f6254ede16117194f9d2`; assets per `SHA256SUMS`). The four locally preserved candidate binaries and candidate review evidence ZIP are engineering artifacts, not substitutes for the published assets.
 
 ## Follow-ups
 
