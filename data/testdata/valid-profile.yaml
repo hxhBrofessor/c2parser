@@ -1,0 +1,25 @@
+schema_version: 1
+frameworks:
+  - id: sample_framework
+    aliases: [sample]
+    field_groups:
+      http:
+        evidence: SOURCE-CONFIRMED
+        verify: true
+        source:
+          id: test-only-source
+          citation: test fixture citation; not an external provenance claim
+          revision: 0123456789abcdef0123456789abcdef01234567
+        items: []
+      cert:
+        evidence: UNKNOWN
+        verify: true
+        source: null
+        reason: Source provenance is not yet available.
+        items: []
+      dns:
+        evidence: BLOCKED_MISSING_SOURCE
+        verify: true
+        source: null
+        reason: Required source is unavailable in this fixture.
+        items: []

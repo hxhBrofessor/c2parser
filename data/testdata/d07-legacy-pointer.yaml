@@ -1,0 +1,14 @@
+schema_version: 1
+frameworks:
+  - id: legacy_fixture
+    field_groups:
+      http:
+        evidence: UNKNOWN
+        verify: false
+        source:
+          id: test-only-v11a-pointer
+          citation: test fixture pointer; not an external provenance claim
+          revision: 425897e8c36005e001e6f6254ede16117194f9d2
+          locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:78
+        reason: External provenance is pending for this test-only legacy pointer.
+        items: []
