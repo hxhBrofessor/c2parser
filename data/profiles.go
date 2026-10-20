@@ -2,6 +2,7 @@ package data
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 
@@ -48,10 +49,25 @@ type FieldGroup struct {
 	Evidence Evidence `yaml:"evidence"`
 	// Verify=true means pending verification and not eligible for scoring.
 	// Verify=false means potentially consumable, not externally verified.
-	Verify bool     `yaml:"verify"`
-	Source *Source  `yaml:"source"`
-	Items  []string `yaml:"items"`
-	Reason string   `yaml:"reason,omitempty"`
+	Verify bool    `yaml:"verify"`
+	Source *Source `yaml:"source"`
+	Items  []Item  `yaml:"items"`
+	Reason string  `yaml:"reason,omitempty"`
+}
+
+// Item is a deliberately small matcher vocabulary for existing fingerprints.
+// It is not an expression language; each kind has a fixed, typed shape.
+type Item struct {
+	ID      string   `yaml:"id"`
+	DebtID  string   `yaml:"debt_id"`
+	Locator string   `yaml:"code_locator"`
+	Kind    string   `yaml:"kind"`
+	Message string   `yaml:"message,omitempty"`
+	Header  string   `yaml:"header,omitempty"`
+	Value   string   `yaml:"value,omitempty"`
+	Values  []string `yaml:"values,omitempty"`
+	Feature string   `yaml:"feature"`
+	Weight  float64  `yaml:"weight"`
 }
 
 // Source identifies a pinned provenance record. Slice 1 metadata is not
@@ -77,7 +93,7 @@ type fieldGroupWire struct {
 	Evidence *Evidence `yaml:"evidence"`
 	Verify   *bool     `yaml:"verify"`
 	Source   *Source   `yaml:"source"`
-	Items    *[]string `yaml:"items"`
+	Items    *[]Item   `yaml:"items"`
 	Reason   *string   `yaml:"reason,omitempty"`
 }
 
@@ -87,7 +103,7 @@ func Load() (Profiles, error) { return ParseProfiles(frameworkFingerprintsYAML) 
 
 // ParseProfiles parses one strict profile document and returns a fresh,
 // validated value. It rejects aliases, anchors, custom tags, duplicate and
-// unknown keys, and nonempty items under the Slice 1 contract.
+// unknown keys, and matcher items outside the bounded Covenant HTTP grammar.
 func ParseProfiles(src []byte) (Profiles, error) {
 	var zero Profiles
 	file, err := parser.ParseBytes(src, 0)
@@ -166,13 +182,14 @@ func ParseProfiles(src []byte) (Profiles, error) {
 			if g.Items == nil {
 				return zero, fmt.Errorf("%s.items: required sequence", groupPath)
 			}
-			if len(*g.Items) != 0 {
-				return zero, fmt.Errorf("%s.items: Slice 1 requires items: []", groupPath)
+			items := append([]Item(nil), (*g.Items)...)
+			if len(items) > 0 && (group != "http" || *fw.ID != "covenant") {
+				return zero, fmt.Errorf("%s.items: nonempty items are supported only for the Covenant HTTP slice", groupPath)
 			}
 			if g.Reason != nil && strings.TrimSpace(*g.Reason) == "" {
 				return zero, fmt.Errorf("%s.reason: must be nonempty when present", groupPath)
 			}
-			value := FieldGroup{Evidence: *g.Evidence, Verify: *g.Verify, Items: []string{}}
+			value := FieldGroup{Evidence: *g.Evidence, Verify: *g.Verify, Items: items}
 			if g.Reason != nil {
 				value.Reason = *g.Reason
 			}
@@ -181,6 +198,9 @@ func ParseProfiles(src []byte) (Profiles, error) {
 				value.Source = &copySource
 			}
 			if err := validateGroup(groupPath, value); err != nil {
+				return zero, err
+			}
+			if err := validateItems(groupPath, value.Items); err != nil {
 				return zero, err
 			}
 			newFW.FieldGroups[group] = value
@@ -203,6 +223,9 @@ func requireKeys(root ast.Node) error {
 	if err := hasKeys(mapping, "schema_version", "frameworks"); err != nil {
 		return fmt.Errorf("document: %w", err)
 	}
+	if _, ok := mapValue(mapping, "schema_version").(*ast.IntegerNode); !ok {
+		return fmt.Errorf("schema_version: expected integer scalar")
+	}
 	frameworksNode := mapValue(mapping, "frameworks")
 	seq, ok := frameworksNode.(*ast.SequenceNode)
 	if !ok {
@@ -216,9 +239,18 @@ func requireKeys(root ast.Node) error {
 		if err := hasKeys(fw, "id", "field_groups"); err != nil {
 			return fmt.Errorf("frameworks[%d]: %w", i, err)
 		}
+		if _, ok := mapValue(fw, "id").(*ast.StringNode); !ok {
+			return fmt.Errorf("frameworks[%d].id: expected string scalar", i)
+		}
 		if aliases := mapValue(fw, "aliases"); aliases != nil {
-			if _, ok := aliases.(*ast.SequenceNode); !ok {
+			seq, ok := aliases.(*ast.SequenceNode)
+			if !ok {
 				return fmt.Errorf("frameworks[%d].aliases: expected sequence when present", i)
+			}
+			for j, alias := range seq.Values {
+				if _, ok := alias.(*ast.StringNode); !ok {
+					return fmt.Errorf("frameworks[%d].aliases[%d]: expected string scalar", i, j)
+				}
 			}
 		}
 		groups, ok := mapValue(fw, "field_groups").(*ast.MappingNode)
@@ -241,6 +273,63 @@ func requireKeys(root ast.Node) error {
 			if err := hasKeys(g, "evidence", "verify", "source", "items"); err != nil {
 				return fmt.Errorf("frameworks[%d].field_groups.%s: %w", i, name, err)
 			}
+			if _, ok := mapValue(g, "evidence").(*ast.StringNode); !ok {
+				return fmt.Errorf("frameworks[%d].field_groups.%s.evidence: expected string scalar", i, name)
+			}
+			if _, ok := mapValue(g, "verify").(*ast.BoolNode); !ok {
+				return fmt.Errorf("frameworks[%d].field_groups.%s.verify: expected boolean scalar", i, name)
+			}
+			if source, exists := mapValue(g, "source").(*ast.MappingNode); exists {
+				if err := hasKeys(source, "id", "citation", "revision"); err != nil {
+					return fmt.Errorf("frameworks[%d].field_groups.%s.source: %w", i, name, err)
+				}
+				for _, key := range []string{"id", "citation", "revision"} {
+					if _, ok := mapValue(source, key).(*ast.StringNode); !ok {
+						return fmt.Errorf("frameworks[%d].field_groups.%s.source.%s: expected string scalar", i, name, key)
+					}
+				}
+			}
+			items, ok := mapValue(g, "items").(*ast.SequenceNode)
+			if !ok {
+				return fmt.Errorf("frameworks[%d].field_groups.%s.items: expected sequence", i, name)
+			}
+			for j, item := range items.Values {
+				im, ok := item.(*ast.MappingNode)
+				if !ok {
+					return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d]: expected mapping", i, name, j)
+				}
+				if err := hasKeys(im, "id", "debt_id", "code_locator", "kind", "feature", "weight"); err != nil {
+					return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d]: %w", i, name, j, err)
+				}
+				for _, key := range []string{"id", "debt_id", "code_locator", "kind", "feature"} {
+					if _, ok := mapValue(im, key).(*ast.StringNode); !ok {
+						return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d].%s: expected string scalar", i, name, j, key)
+					}
+				}
+				for _, key := range []string{"message", "header", "value"} {
+					if node := mapValue(im, key); node != nil {
+						if _, ok := node.(*ast.StringNode); !ok {
+							return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d].%s: expected string scalar", i, name, j, key)
+						}
+					}
+				}
+				if values := mapValue(im, "values"); values != nil {
+					seq, ok := values.(*ast.SequenceNode)
+					if !ok {
+						return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d].values: expected sequence", i, name, j)
+					}
+					for k, value := range seq.Values {
+						if _, ok := value.(*ast.StringNode); !ok {
+							return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d].values[%d]: expected string scalar", i, name, j, k)
+						}
+					}
+				}
+				if _, ok := mapValue(im, "weight").(*ast.FloatNode); !ok {
+					if _, intOK := mapValue(im, "weight").(*ast.IntegerNode); !intOK {
+						return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d].weight: expected numeric scalar", i, name, j)
+					}
+				}
+			}
 			if reason := mapValue(g, "reason"); reason != nil {
 				if _, ok := reason.(*ast.StringNode); !ok {
 					return fmt.Errorf("frameworks[%d].field_groups.%s.reason: expected string when present", i, name)
@@ -255,6 +344,61 @@ func requireKeys(root ast.Node) error {
 					}
 				}
 			}
+		}
+	}
+	return nil
+}
+
+func validateItems(path string, items []Item) error {
+	seen := map[string]bool{}
+	for i, item := range items {
+		p := fmt.Sprintf("%s.items[%d]", path, i)
+		if item.ID == "" || item.DebtID == "" || item.Locator == "" || item.Feature == "" || strings.TrimSpace(item.Feature) != item.Feature {
+			return fmt.Errorf("%s: id, debt_id, code_locator and feature are required and trimmed", p)
+		}
+		if !strings.HasPrefix(item.Locator, "repo@"+v11aSourceCommit+":internal/engine/httpdefaults.go:") {
+			return fmt.Errorf("%s.code_locator: must point into the pinned v11a HTTP implementation", p)
+		}
+		loc := strings.TrimPrefix(item.Locator, "repo@"+v11aSourceCommit+":internal/engine/httpdefaults.go:")
+		if !locatorLinePattern.MatchString(loc) {
+			return fmt.Errorf("%s.code_locator: expected bounded source line range", p)
+		}
+		if seen[item.ID] || seen[item.DebtID] {
+			return fmt.Errorf("%s: duplicate immutable item/debt ID", p)
+		}
+		seen[item.ID], seen[item.DebtID] = true, true
+		if item.Weight < 0 || item.Weight > 1 || math.IsNaN(item.Weight) || math.IsInf(item.Weight, 0) {
+			return fmt.Errorf("%s.weight: must be finite and within [0,1]", p)
+		}
+		switch item.Kind {
+		case "uri_exact":
+			if item.Message != "request" || item.Header != "" || item.Value == "" || len(item.Values) != 0 {
+				return fmt.Errorf("%s: uri_exact requires request message and one value", p)
+			}
+		case "header_exact":
+			if (item.Message != "request" && item.Message != "response") || item.Header == "" || item.Value == "" || len(item.Values) != 0 {
+				return fmt.Errorf("%s: header_exact requires message, header and one value", p)
+			}
+			if !((item.Message == "request" && item.Header == "user-agent") || (item.Message == "response" && item.Header == "server")) {
+				return fmt.Errorf("%s: header_exact supports only existing Covenant request user-agent or response server predicates", p)
+			}
+		case "header_contains":
+			if item.Message != "request" || item.Header != "cookie" || item.Value == "" || len(item.Values) != 0 {
+				return fmt.Errorf("%s: header_contains requires message, header and one value", p)
+			}
+		case "body_prefix":
+			if item.Message != "request" || item.Value == "" || item.Header != "" || len(item.Values) != 0 {
+				return fmt.Errorf("%s: body_prefix requires request message and one value", p)
+			}
+		case "body_contains_any":
+			if item.Message != "response" || len(item.Values) < 2 || item.Header != "" || item.Value != "" {
+				return fmt.Errorf("%s: body_contains_any requires response message and values", p)
+			}
+		default:
+			return fmt.Errorf("%s.kind: unsupported matcher kind %q", p, item.Kind)
+		}
+		if item.Kind != "header_exact" && item.Kind != "header_contains" && item.Message != "request" && item.Message != "response" {
+			return fmt.Errorf("%s.message: must be request or response", p)
 		}
 	}
 	return nil

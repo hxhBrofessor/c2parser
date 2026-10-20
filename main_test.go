@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"c2parser/internal/engine"
@@ -59,6 +60,83 @@ func TestParallelIdentical(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestCovenantCLIAndLibraryJSONEquivalent(t *testing.T) {
+	scenario := `name: profile-parity
+seed: 91
+start: 2024-03-25T07:00:00Z
+streams:
+  - label: c2
+    shape: neutral-http-test
+    transport: http-keepalive
+    server: 198.51.100.10
+    topology: {clients: [10.5.0.10]}
+    timing: {model: fixed, sleep: 1, jitter: 0, events: 2}
+    content:
+      method: GET
+      uri: /en-us/index.html
+      headers:
+        - 'User-Agent: Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36'
+        - 'Cookie: SESSIONID=1552332971750'
+      poll: {dist: fixed, min: 16}
+      resp: {dist: fixed, min: 16}
+`
+	dir := t.TempDir()
+	runCase := func(name, doc string, wantCovenant bool) {
+		t.Helper()
+		sc, err := synth.ParseScenario([]byte(doc))
+		if err != nil {
+			t.Fatal(err)
+		}
+		caseDir := filepath.Join(dir, name)
+		if err := os.Mkdir(caseDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		me, err := synth.WriteFile(sc, caseDir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(caseDir, me.Path)
+		res, err := engine.AnalyzeFile(path, engine.Config{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var library bytes.Buffer
+		if err := report.JSON(&library, []*engine.Result{res}, report.Options{MinScore: 0}); err != nil {
+			t.Fatal(err)
+		}
+		oldStdout := os.Stdout
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		os.Stdout = w
+		code := run([]string{"-no-banner", "-no-sigma", "-no-sigma-update", "-offline", "-json", "-min-score", "0", path})
+		_ = w.Close()
+		os.Stdout = oldStdout
+		cli, readErr := io.ReadAll(r)
+		_ = r.Close()
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if code != 0 {
+			t.Fatalf("%s CLI exit=%d output=%s", name, code, cli)
+		}
+		if !bytes.Equal(cli, library.Bytes()) {
+			t.Fatalf("%s CLI/library JSON differ\nCLI: %s\nLIB: %s", name, cli, library.Bytes())
+		}
+		matched := bytes.Contains(cli, []byte("default_profile:covenant"))
+		if matched != wantCovenant {
+			t.Fatalf("%s Covenant match=%v, want %v: %s", name, matched, wantCovenant, cli)
+		}
+	}
+	t.Run("positive", func(t *testing.T) { runCase("positive", scenario, true) })
+	negative := strings.ReplaceAll(scenario, "profile-parity", "profile-parity-negative")
+	negative = strings.ReplaceAll(negative, "/en-us/index.html", "/not-profile.html")
+	negative = strings.ReplaceAll(negative, "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36", "Mozilla/5.0")
+	negative = strings.ReplaceAll(negative, "SESSIONID=1552332971750", "sessionid=1552332971750")
+	t.Run("negative", func(t *testing.T) { runCase("negative", negative, false) })
 }
 
 func TestCandidateDestinationRejectsProtectedAliases(t *testing.T) {

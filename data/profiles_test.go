@@ -18,20 +18,23 @@ func readFixture(t *testing.T, name string) []byte {
 	return b
 }
 
-func TestEmbeddedEmptyAssetAndFreshCopies(t *testing.T) {
+func TestEmbeddedCovenantAssetAndFreshCopies(t *testing.T) {
 	first, err := data.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.SchemaVersion != 1 || first.Frameworks == nil || len(first.Frameworks) != 0 {
+	if first.SchemaVersion != 1 || len(first.Frameworks) != 1 || first.Frameworks[0].ID != "covenant" {
 		t.Fatalf("unexpected embedded profile document: %#v", first)
 	}
-	first.Frameworks = append(first.Frameworks, data.Framework{ID: "caller_mutation"})
+	if len(first.Frameworks[0].FieldGroups["http"].Items) != 8 {
+		t.Fatalf("unexpected embedded Covenant HTTP inventory: %#v", first.Frameworks[0].FieldGroups["http"].Items)
+	}
+	first.Frameworks[0].FieldGroups["http"] = data.FieldGroup{}
 	second, err := data.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(second.Frameworks) != 0 {
+	if len(second.Frameworks) != 1 || len(second.Frameworks[0].FieldGroups["http"].Items) != 8 {
 		t.Fatalf("caller mutation reached package asset: %#v", second)
 	}
 	third, err := data.Load()
@@ -40,6 +43,110 @@ func TestEmbeddedEmptyAssetAndFreshCopies(t *testing.T) {
 	}
 	if !reflect.DeepEqual(second, third) {
 		t.Fatal("repeated embedded loads differ")
+	}
+}
+
+func TestStrictScalarKinds(t *testing.T) {
+	base := string(readFixture(t, "valid-profile.yaml"))
+	cases := []struct{ name, old, replacement string }{
+		{"quoted schema version", "schema_version: 1", `schema_version: "1"`},
+		{"float schema version", "schema_version: 1", "schema_version: 1.0"},
+		{"integer framework id", "id: sample_framework", "id: 17"},
+		{"integer alias", "aliases: [sample]", "aliases: [17]"},
+		{"integer evidence", "evidence: SOURCE-CONFIRMED", "evidence: 17"},
+		{"string verify flag", "verify: true", `verify: "true"`},
+		{"integer source id", "id: test-only-source", "id: 17"},
+		{"boolean citation", "citation: test fixture citation; not an external provenance claim", "citation: true"},
+		{"boolean revision", "revision: 0123456789abcdef0123456789abcdef01234567", "revision: false"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := strings.Replace(base, tc.old, tc.replacement, 1)
+			if input == base {
+				t.Fatal("test mutation did not apply")
+			}
+			if _, err := data.ParseProfiles([]byte(input)); err == nil {
+				t.Fatal("expected strict scalar-kind rejection")
+			}
+		})
+	}
+}
+
+func TestUnresolvedEvidenceRequiresExplicitSourceKey(t *testing.T) {
+	for _, evidence := range []string{"UNKNOWN", "BLOCKED_MISSING_SOURCE"} {
+		t.Run(evidence, func(t *testing.T) {
+			input := []byte("schema_version: 1\nframeworks:\n  - id: unresolved_fixture\n    field_groups:\n      http:\n        evidence: " + evidence + "\n        verify: true\n        reason: status recorded for test\n        items: []\n")
+			if _, err := data.ParseProfiles(input); err == nil || !strings.Contains(err.Error(), "source") {
+				t.Fatalf("missing explicit source key was not rejected for %s: %v", evidence, err)
+			}
+		})
+	}
+}
+
+func TestCovenantItemsHaveClosedTypedGrammar(t *testing.T) {
+	asset, err := os.ReadFile("framework-fingerprints.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := data.ParseProfiles(asset); err != nil {
+		t.Fatalf("production profile rejected: %v", err)
+	}
+	cases := []struct{ name, old, replacement string }{
+		{"unknown kind", "kind: uri_exact", "kind: regex"},
+		{"wrong scalar type", "weight: 0.25", "weight: true"},
+		{"unknown item key", "            kind: uri_exact", "            extra: true\n            kind: uri_exact"},
+		{"non-string values entry", `              - "// Hello World! "`, "              - true"},
+		{"missing item debt id", "            debt_id: B33-D07-COV-HTTP-001\n", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := strings.Replace(string(asset), tc.old, tc.replacement, 1)
+			if input == string(asset) {
+				t.Fatal("test mutation did not apply")
+			}
+			if _, err := data.ParseProfiles([]byte(input)); err == nil {
+				t.Fatal("expected closed-grammar rejection")
+			}
+		})
+	}
+}
+
+func TestCovenantDebtRegisterInventory(t *testing.T) {
+	p, err := data.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := p.Frameworks[0].FieldGroups["http"]
+	want := map[string]struct {
+		debt, kind, feature, locator string
+		weight                       float64
+	}{
+		"covenant-http-uri-index":         {"B33-D07-COV-HTTP-001", "uri_exact", "URI /en-us/index.html", "103-104", .25},
+		"covenant-http-uri-docs":          {"B33-D07-COV-HTTP-002", "uri_exact", "URI /en-us/docs.html", "103-104", .25},
+		"covenant-http-uri-test":          {"B33-D07-COV-HTTP-003", "uri_exact", "URI /en-us/test.html", "103-104", .25},
+		"covenant-http-user-agent":        {"B33-D07-COV-HTTP-004", "header_exact", "Chrome/41.0.2228.0 User-Agent", "106-107", .45},
+		"covenant-http-cookie":            {"B33-D07-COV-HTTP-005", "header_contains", "Cookie SESSIONID=1552332971750", "109-110", .9},
+		"covenant-http-post-template":     {"B33-D07-COV-HTTP-006", "body_prefix", "POST body template i=a19ea23062db…&data=", "112-113", .9},
+		"covenant-http-server":            {"B33-D07-COV-HTTP-007", "header_exact", "Server: Microsoft-IIS/7.5", "156-157", .15},
+		"covenant-http-response-template": {"B33-D07-COV-HTTP-008", "body_contains_any", "Hello World! response template", "159-160", .4},
+	}
+	if g.Evidence != data.EvidenceUnknown || g.Verify || g.Source == nil || g.Source.Revision != "425897e8c36005e001e6f6254ede16117194f9d2" || !strings.Contains(strings.ToLower(g.Reason), "external provenance pending") || len(g.Items) != len(want) {
+		t.Fatalf("D-07 group status mismatch: %#v", g)
+	}
+	seenDebt := map[string]bool{}
+	ordered := []string{"covenant-http-uri-index", "covenant-http-uri-docs", "covenant-http-uri-test", "covenant-http-user-agent", "covenant-http-cookie", "covenant-http-post-template", "covenant-http-server", "covenant-http-response-template"}
+	for i, item := range g.Items {
+		if i >= len(ordered) || item.ID != ordered[i] {
+			t.Errorf("noncanonical behavior order at %d: got %q", i, item.ID)
+		}
+		expect, ok := want[item.ID]
+		if !ok || expect.debt != item.DebtID || expect.kind != item.Kind || expect.feature != item.Feature || expect.weight != item.Weight || !strings.HasSuffix(item.Locator, ":"+expect.locator) {
+			t.Errorf("unexpected Covenant HTTP item: %#v", item)
+		}
+		if seenDebt[item.DebtID] {
+			t.Errorf("duplicate behavior-debt ID %q", item.DebtID)
+		}
+		seenDebt[item.DebtID] = true
 	}
 }
 
@@ -237,7 +344,7 @@ func TestD07FixtureDoesNotMutateEmbeddedAsset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(embedded.Frameworks) != 0 {
+	if len(embedded.Frameworks) != 1 || embedded.Frameworks[0].ID != "covenant" || embedded.Frameworks[0].FieldGroups["http"].Source.ID != "v11a-covenant-http-legacy-code" {
 		t.Fatal("test fixture affected production embedded asset")
 	}
 }

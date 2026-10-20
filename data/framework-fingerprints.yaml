@@ -1,2 +1,84 @@
 schema_version: 1
-frameworks: []
+frameworks:
+  - id: covenant
+    aliases: []
+    field_groups:
+      http:
+        evidence: UNKNOWN
+        verify: false
+        source:
+          id: v11a-covenant-http-legacy-code
+          citation: Existing Covenant HTTP predicates in the pinned v11a implementation; this is code provenance, not external corroboration.
+          revision: 425897e8c36005e001e6f6254ede16117194f9d2
+          locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:matchFrameworkDefaults
+        reason: External provenance pending; this item-level register preserves only existing v11a behavior.
+        items:
+          - id: covenant-http-uri-index
+            debt_id: B33-D07-COV-HTTP-001
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:103-104
+            kind: uri_exact
+            message: request
+            value: /en-us/index.html
+            feature: URI /en-us/index.html
+            weight: 0.25
+          - id: covenant-http-uri-docs
+            debt_id: B33-D07-COV-HTTP-002
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:103-104
+            kind: uri_exact
+            message: request
+            value: /en-us/docs.html
+            feature: URI /en-us/docs.html
+            weight: 0.25
+          - id: covenant-http-uri-test
+            debt_id: B33-D07-COV-HTTP-003
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:103-104
+            kind: uri_exact
+            message: request
+            value: /en-us/test.html
+            feature: URI /en-us/test.html
+            weight: 0.25
+          - id: covenant-http-user-agent
+            debt_id: B33-D07-COV-HTTP-004
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:106-107
+            kind: header_exact
+            message: request
+            header: user-agent
+            value: Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36
+            feature: Chrome/41.0.2228.0 User-Agent
+            weight: 0.45
+          - id: covenant-http-cookie
+            debt_id: B33-D07-COV-HTTP-005
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:109-110
+            kind: header_contains
+            message: request
+            header: cookie
+            value: SESSIONID=1552332971750
+            feature: Cookie SESSIONID=1552332971750
+            weight: 0.9
+          - id: covenant-http-post-template
+            debt_id: B33-D07-COV-HTTP-006
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:112-113
+            kind: body_prefix
+            message: request
+            value: i=a19ea23062db990386a3a478cb89d52e&data=
+            feature: POST body template i=a19ea23062db…&data=
+            weight: 0.9
+          - id: covenant-http-server
+            debt_id: B33-D07-COV-HTTP-007
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:156-157
+            kind: header_exact
+            message: response
+            header: server
+            value: Microsoft-IIS/7.5
+            feature: "Server: Microsoft-IIS/7.5"
+            weight: 0.15
+          - id: covenant-http-response-template
+            debt_id: B33-D07-COV-HTTP-008
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:159-160
+            kind: body_contains_any
+            message: response
+            values:
+              - "// Hello World! "
+              - <title>Hello World!</title>
+            feature: Hello World! response template
+            weight: 0.4

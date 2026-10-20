@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"c2parser/data"
 	"c2parser/internal/stats"
 )
 
@@ -30,12 +31,14 @@ const (
 	fwThreshold = 0.65
 )
 
+// covenantURIs remains as immutable test-oracle inventory; runtime Covenant
+// matching consumes the validated embedded profile below.
+var covenantURIs = map[string]bool{"/en-us/index.html": true, "/en-us/docs.html": true, "/en-us/test.html": true}
+
 type fwState struct {
 	feats  map[string]float64
 	frames []int64
 }
-
-var covenantURIs = map[string]bool{"/en-us/index.html": true, "/en-us/docs.html": true, "/en-us/test.html": true}
 
 var csDefaultURIs = map[string]bool{}
 
@@ -92,26 +95,72 @@ func (ch *httpChannel) fwAdd(fw, feat string, s float64, frame int64) {
 	}
 }
 
+func loadCovenantHTTPItems() ([]data.Item, error) {
+	p, err := data.Load()
+	if err != nil {
+		return nil, err
+	}
+	return covenantHTTPItems(p)
+}
+
+func covenantHTTPItems(p data.Profiles) ([]data.Item, error) {
+	if len(p.Frameworks) != 1 || p.Frameworks[0].ID != "covenant" {
+		return nil, fmt.Errorf("expected only the covenant framework in the first migration slice")
+	}
+	fw := p.Frameworks[0]
+	if len(fw.FieldGroups) != 1 {
+		return nil, fmt.Errorf("expected only Covenant http field group in the first migration slice")
+	}
+	g, ok := fw.FieldGroups["http"]
+	if !ok || g.Evidence != data.EvidenceUnknown || g.Verify || g.Source == nil || len(g.Items) != 8 {
+		return nil, fmt.Errorf("Covenant http profile must contain eight registered D-07 legacy items")
+	}
+	return append([]data.Item(nil), g.Items...), nil
+}
+
+func (e *Engine) matchCovenantHTTP(ch *httpChannel, m *httpMsg, path string, frame int64) {
+	for _, item := range e.covenantHTTP {
+		if (item.Message == "request") != m.req {
+			continue
+		}
+		matched := false
+		switch item.Kind {
+		case "uri_exact":
+			matched = path == item.Value
+		case "header_exact":
+			matched = m.hdr[item.Header] == item.Value
+		case "header_contains":
+			matched = strings.Contains(m.hdr[item.Header], item.Value)
+		case "body_prefix":
+			matched = bytes.HasPrefix(m.head, []byte(item.Value))
+		case "body_contains_any":
+			for _, value := range item.Values {
+				if bytes.Contains(m.head, []byte(value)) {
+					matched = true
+					break
+				}
+			}
+		}
+		if matched {
+			ch.fwAdd("Covenant", item.Feature, item.Weight, frame)
+		}
+	}
+}
+
 func (e *Engine) matchFrameworkDefaults(ch *httpChannel, m *httpMsg) {
+	if e.covenantHTTP == nil && e.profileErr == nil {
+		e.covenantHTTP, e.profileErr = loadCovenantHTTPItems()
+	}
+	if e.profileErr != nil {
+		return
+	}
 	f := m.frame
 	if m.req {
 		path, query, _ := strings.Cut(m.uri, "?")
 		ua, ck := m.hdr["user-agent"], m.hdr["cookie"]
 		ct := strings.TrimSpace(m.hdr["content-type"])
 
-		// Covenant
-		if covenantURIs[path] {
-			ch.fwAdd("Covenant", "URI "+path, 0.25, f)
-		}
-		if ua == covenantUA {
-			ch.fwAdd("Covenant", "Chrome/41.0.2228.0 User-Agent", 0.45, f)
-		}
-		if strings.Contains(ck, "SESSIONID=1552332971750") {
-			ch.fwAdd("Covenant", "Cookie SESSIONID=1552332971750", 0.9, f)
-		}
-		if bytes.HasPrefix(m.head, []byte("i=a19ea23062db990386a3a478cb89d52e&data=")) {
-			ch.fwAdd("Covenant", "POST body template i=a19ea23062db…&data=", 0.9, f)
-		}
+		e.matchCovenantHTTP(ch, m, path, f)
 
 		// Merlin
 		if m.method == "POST" && path == "/" {
@@ -151,14 +200,8 @@ func (e *Engine) matchFrameworkDefaults(ch *httpChannel, m *httpMsg) {
 		return
 	}
 
-	sv, ct := m.hdr["server"], strings.TrimSpace(m.hdr["content-type"])
-	// Covenant
-	if sv == "Microsoft-IIS/7.5" {
-		ch.fwAdd("Covenant", "Server: Microsoft-IIS/7.5", 0.15, f)
-	}
-	if bytes.Contains(m.head, []byte("// Hello World! ")) || bytes.Contains(m.head, []byte("<title>Hello World!</title>")) {
-		ch.fwAdd("Covenant", "Hello World! response template", 0.4, f)
-	}
+	ct := strings.TrimSpace(m.hdr["content-type"])
+	e.matchCovenantHTTP(ch, m, "", f)
 	// PoshC2 (CPython http.server underneath)
 	if m.serverRaw == "Apache " {
 		ch.fwAdd("PoshC2", `"Server: Apache " with trailing space`, 0.6, f)

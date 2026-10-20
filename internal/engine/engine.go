@@ -15,6 +15,7 @@ import (
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/reassembly"
 
+	"c2parser/data"
 	"c2parser/internal/pcapio"
 	"c2parser/internal/sigma"
 	"c2parser/internal/stats"
@@ -104,6 +105,8 @@ type Engine struct {
 	ldapSessions       []*ldapSession                // LDAP connections (v10a 2.2)
 	udpRecs            []ConnRecord
 	cfg                Config
+	covenantHTTP       []data.Item
+	profileErr         error
 	candidateCollector *candidateCollector // opt-in Base32/Base58 sidecar only
 	internal           []netip.Prefix
 
@@ -149,6 +152,7 @@ func New(cfg Config) *Engine {
 		httpChans: map[httpChanKey]*httpChannel{}, dns: newDNSState(), names: map[netip.Addr]map[string]bool{},
 		resolved: map[netip.Addr]bool{}, baselines: map[string]*hostBaseline{},
 	}
+	e.covenantHTTP, e.profileErr = loadCovenantHTTPItems()
 	e.sigma, e.sigmaHits = map[string][]*sigma.Rule{}, map[string]*sigmaHit{}
 	for _, r := range cfg.Sigma {
 		e.sigma[r.Kind] = append(e.sigma[r.Kind], r)
@@ -206,6 +210,9 @@ func analyzeFile(path string, cfg Config, includeCandidates bool) (*Result, Deco
 
 // Ingest consumes every packet from r.
 func (e *Engine) Ingest(r pcapio.Reader) error {
+	if e.profileErr != nil {
+		return fmt.Errorf("embedded framework profiles: %w", e.profileErr)
+	}
 	for {
 		p, err := r.Next()
 		if errors.Is(err, io.EOF) {
