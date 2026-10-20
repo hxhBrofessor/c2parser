@@ -7,7 +7,7 @@ import (
 )
 
 // lastRelease is the previous released v2 engine in testdata/stress_baseline.json.
-const lastRelease = "v9.0"
+const lastRelease = "v10.0"
 
 // stressTradeoffs are cells allowed below max(v1, last release) − 0.03,
 // with the reason letter used in docs/stress-tradeoffs.md.
