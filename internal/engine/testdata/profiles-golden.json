@@ -1,0 +1,389 @@
+{
+  "certificates": {
+    "generatorSpans": [
+      {
+        "key": "730",
+        "value": "2 y"
+      },
+      {
+        "key": "731",
+        "value": "2 y"
+      },
+      {
+        "key": "1095",
+        "value": "3 y"
+      },
+      {
+        "key": "1096",
+        "value": "3 y"
+      },
+      {
+        "key": "3650",
+        "value": "10 y"
+      },
+      {
+        "key": "3651",
+        "value": "10 y"
+      },
+      {
+        "key": "3652",
+        "value": "10 y"
+      },
+      {
+        "key": "3653",
+        "value": "10 y"
+      }
+    ],
+    "knownCertSHA256": [
+      {
+        "key": "56a06a233bd30f693de25ef12cc19e8b2c92d3eb97dd969a2578df084c376478",
+        "value": "Cobalt Strike second widely-seen default certificate"
+      },
+      {
+        "key": "87f2085c32b6a2cc709b365f55873e207a9caa10bffecf2fd16d3cf9d94d390c",
+        "value": "Cobalt Strike default team-server certificate"
+      },
+      {
+        "key": "d597d6572c5616573170275d0b5d5e3ab0c06d4a9104bbdbe952c4bcb52118c9",
+        "value": "Brute Ratel C4 certificate (Unit 42 2022 cluster)"
+      }
+    ],
+    "knownCertSerial": [
+      {
+        "key": "146473198",
+        "value": "Cobalt Strike default team-server certificate (serial 0x8BB00EE)"
+      },
+      {
+        "key": "476862511373535319627199034793753459614889484917",
+        "value": "Brute Ratel C4 certificate (Unit 42 2022 cluster)"
+      }
+    ]
+  },
+  "csDNSPrefixSet": [
+    {
+      "key": "api",
+      "value": true
+    },
+    {
+      "key": "cdn",
+      "value": true
+    },
+    {
+      "key": "post",
+      "value": true
+    },
+    {
+      "key": "www",
+      "value": true
+    },
+    {
+      "key": "www6",
+      "value": true
+    }
+  ],
+  "frame_magics_hex": [
+    "deadbeef"
+  ],
+  "http_defaults": {
+    "b64CookieRe": "^[A-Za-z0-9+/]{40,}={0,2}$",
+    "covenantUA": "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36",
+    "covenantURIs": [
+      {
+        "key": "/en-us/docs.html",
+        "value": true
+      },
+      {
+        "key": "/en-us/index.html",
+        "value": true
+      },
+      {
+        "key": "/en-us/test.html",
+        "value": true
+      }
+    ],
+    "csDefaultURIs": [
+      {
+        "key": "/IE9CompatViewList.xml",
+        "value": true
+      },
+      {
+        "key": "/__utm.gif",
+        "value": true
+      },
+      {
+        "key": "/activity",
+        "value": true
+      },
+      {
+        "key": "/ca",
+        "value": true
+      },
+      {
+        "key": "/cm",
+        "value": true
+      },
+      {
+        "key": "/cx",
+        "value": true
+      },
+      {
+        "key": "/dot.gif",
+        "value": true
+      },
+      {
+        "key": "/dpixel",
+        "value": true
+      },
+      {
+        "key": "/en_US/all.js",
+        "value": true
+      },
+      {
+        "key": "/fwlink",
+        "value": true
+      },
+      {
+        "key": "/g.pixel",
+        "value": true
+      },
+      {
+        "key": "/ga.js",
+        "value": true
+      },
+      {
+        "key": "/j.ad",
+        "value": true
+      },
+      {
+        "key": "/load",
+        "value": true
+      },
+      {
+        "key": "/match",
+        "value": true
+      },
+      {
+        "key": "/pixel",
+        "value": true
+      },
+      {
+        "key": "/pixel.gif",
+        "value": true
+      },
+      {
+        "key": "/ptj",
+        "value": true
+      },
+      {
+        "key": "/push",
+        "value": true
+      },
+      {
+        "key": "/updates.rss",
+        "value": true
+      },
+      {
+        "key": "/visit.js",
+        "value": true
+      }
+    ],
+    "csStagerURIRe": "^/[A-Za-z0-9]{4}$",
+    "csSubmitQRe": "^id=\\d+$",
+    "framework_fixtures": [
+      {
+        "key": "Cobalt Strike",
+        "value": {
+          "detail": "Cobalt Strike default HTTP profile: GET default URI /pixel.gif with bare base64 Cookie metadata; POST /submit.php?id=\u003cn\u003e (task output); empty text/plain 404; stager URI /WWWW (checksum8 = 92)",
+          "features": [
+            {
+              "key": "GET default URI /pixel.gif with bare base64 Cookie metadata",
+              "value": 0.6
+            },
+            {
+              "key": "POST /submit.php?id=\u003cn\u003e (task output)",
+              "value": 0.7
+            },
+            {
+              "key": "empty text/plain 404",
+              "value": 0.2
+            },
+            {
+              "key": "stager URI /WWWW (checksum8 = 92)",
+              "value": 0.35
+            }
+          ],
+          "name": "default_profile:cobalt_strike",
+          "score": 0.94
+        }
+      },
+      {
+        "key": "Covenant",
+        "value": {
+          "detail": "Covenant default HTTP profile: Chrome/41.0.2228.0 User-Agent; Cookie SESSIONID=1552332971750; Hello World! response template; POST body template i=a19ea23062db…\u0026data=; Server: Microsoft-IIS/7.5; URI /en-us/index.html",
+          "features": [
+            {
+              "key": "Chrome/41.0.2228.0 User-Agent",
+              "value": 0.45
+            },
+            {
+              "key": "Cookie SESSIONID=1552332971750",
+              "value": 0.9
+            },
+            {
+              "key": "Hello World! response template",
+              "value": 0.4
+            },
+            {
+              "key": "POST body template i=a19ea23062db…\u0026data=",
+              "value": 0.9
+            },
+            {
+              "key": "Server: Microsoft-IIS/7.5",
+              "value": 0.15
+            },
+            {
+              "key": "URI /en-us/index.html",
+              "value": 0.25
+            }
+          ],
+          "name": "default_profile:covenant",
+          "score": 1
+        }
+      },
+      {
+        "key": "Merlin",
+        "value": {
+          "detail": "Merlin default HTTP profile: Authorization: Bearer \u003cJWT\u003e; Chrome/40.0.2214.85 User-Agent; Content-Type application/octet-stream; charset=utf-8; POST /",
+          "features": [
+            {
+              "key": "Authorization: Bearer \u003cJWT\u003e",
+              "value": 0.3
+            },
+            {
+              "key": "Chrome/40.0.2214.85 User-Agent",
+              "value": 0.55
+            },
+            {
+              "key": "Content-Type application/octet-stream; charset=utf-8",
+              "value": 0.5
+            },
+            {
+              "key": "POST /",
+              "value": 0.1
+            }
+          ],
+          "name": "default_profile:merlin",
+          "score": 0.86
+        }
+      },
+      {
+        "key": "PoshC2",
+        "value": {
+          "detail": "PoshC2 default HTTP profile: \"Server: Apache \" with trailing space; 200 page slack-app-id #av33f33; 404 footer IIS ASP.NET 2.0.43451; Cookie SessionID=; HTTP/1.0 response with lower-case Content-type; unversioned Apache (Debian) 404 footer",
+          "features": [
+            {
+              "key": "\"Server: Apache \" with trailing space",
+              "value": 0.6
+            },
+            {
+              "key": "200 page slack-app-id #av33f33",
+              "value": 0.8
+            },
+            {
+              "key": "404 footer IIS ASP.NET 2.0.43451",
+              "value": 0.7
+            },
+            {
+              "key": "Cookie SessionID=",
+              "value": 0.3
+            },
+            {
+              "key": "HTTP/1.0 response with lower-case Content-type",
+              "value": 0.3
+            },
+            {
+              "key": "unversioned Apache (Debian) 404 footer",
+              "value": 0.5
+            }
+          ],
+          "name": "default_profile:poshc2",
+          "score": 0.99
+        }
+      }
+    ],
+    "fwThreshold": 0.65,
+    "merlinUA": "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.85 Safari/537.36"
+  },
+  "signatures": [
+    {
+      "name": "7z-archive",
+      "kind": "archive",
+      "weight": 0.45,
+      "probe_matches": true
+    },
+    {
+      "name": "elf-executable",
+      "kind": "tooling",
+      "weight": 0.5,
+      "probe_matches": true
+    },
+    {
+      "name": "havoc-demon-header",
+      "kind": "c2",
+      "weight": 0.97,
+      "probe_matches": true
+    },
+    {
+      "name": "pe-executable",
+      "kind": "tooling",
+      "weight": 0.6,
+      "probe_matches": true
+    },
+    {
+      "name": "rar-archive",
+      "kind": "archive",
+      "weight": 0.45,
+      "probe_matches": true
+    },
+    {
+      "name": "zip-archive",
+      "kind": "archive",
+      "weight": 0.35,
+      "probe_matches": true
+    }
+  ],
+  "uri_shape": {
+    "cases": [
+      {
+        "key": "/WWWW",
+        "value": "checksum8-x86"
+      },
+      {
+        "key": "/WWWX",
+        "value": "checksum8-x64"
+      },
+      {
+        "key": "/a.js",
+        "value": ""
+      },
+      {
+        "key": "/beacon.php",
+        "value": "word-dot-ext"
+      },
+      {
+        "key": "/index.html",
+        "value": "word-dot-ext"
+      },
+      {
+        "key": "/not-a-shape",
+        "value": ""
+      }
+    ],
+    "stagerMinBytes": 65536,
+    "uriShapeMinReqs": 5,
+    "uriShapeWeight": 0.3,
+    "wordDotExtRe": "^/[a-z]{3,16}\\.(php|asp|aspx|jsp|gif|png|jpg|ico|js|css|rss|xml|htm|html)$",
+    "wordDotMaxURIs": 3,
+    "wordDotMinFrac": 0.8
+  }
+}
