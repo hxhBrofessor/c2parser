@@ -1,4 +1,18 @@
 {
+  "v10.0": {
+    "200000": {
+      "conns": 200036,
+      "packets": 1720338,
+      "wall_sec": 3.421812167,
+      "mb_per_sec": 78.53700553842967,
+      "pkt_per_sec": 502756.40977344156,
+      "conn_per_sec": 58459.08256717003,
+      "rss_per_conn_kb": 5.091883460977024,
+      "peak_rss_mb": 1031.390625,
+      "needle_rank": 1,
+      "machine": "darwin/arm64, 16 CPUs"
+    }
+  },
   "v9.0": {
     "200000": {
       "conns": 200036,

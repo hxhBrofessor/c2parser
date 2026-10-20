@@ -97,7 +97,7 @@ type scaleResult struct {
 }
 
 // scaleBaselineRelease is the release the nightly scale run is gated on.
-const scaleBaselineRelease = "v9.0"
+const scaleBaselineRelease = "v10.0"
 
 // v10a 0.2: fail the nightly run when connections/s or RSS per connection
 // regresses by more than 20 % against the release baseline, or the needle
