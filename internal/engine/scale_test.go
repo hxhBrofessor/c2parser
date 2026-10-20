@@ -156,7 +156,7 @@ func maxRSS() int64 {
 	}
 	var ru syscall.Rusage
 	_ = syscall.Getrusage(syscall.RUSAGE_SELF, &ru)
-	return ru.Maxrss << 10
+	return ru.Maxrss
 }
 
 func countTruncated(r *Result) int64 { return r.Counters.SeriesEventsDropped }
