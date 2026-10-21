@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -202,6 +201,13 @@ func normalizeTrackedJSONPaths(root string, listed []string) ([]string, error) {
 }
 
 func discoverTrackedEvidenceJSON(root string) ([]string, error) {
+	if _, err := os.Lstat(filepath.Join(root, ".git")); err != nil {
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("inspect Git metadata: %w", err)
+		}
+		// Source export without Git metadata: every present file is in scope.
+		return walkEvidenceJSON(root)
+	}
 	cmd := exec.Command("git", "ls-files", "-z", "--", "evidence")
 	cmd.Dir = root
 	dataBytes, err := cmd.Output()
@@ -209,6 +215,30 @@ func discoverTrackedEvidenceJSON(root string) ([]string, error) {
 		return nil, fmt.Errorf("git ls-files evidence: %w", err)
 	}
 	listed := strings.Split(strings.TrimSuffix(string(dataBytes), "\x00"), "\x00")
+	return normalizeTrackedJSONPaths(root, listed)
+}
+
+func walkEvidenceJSON(root string) ([]string, error) {
+	var listed []string
+	err := filepath.WalkDir(filepath.Join(root, "evidence"), func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("symlink in evidence tree: %s", p)
+		}
+		if !d.IsDir() {
+			rel, err := filepath.Rel(root, p)
+			if err != nil {
+				return err
+			}
+			listed = append(listed, filepath.ToSlash(rel))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
 	return normalizeTrackedJSONPaths(root, listed)
 }
 
@@ -366,11 +396,11 @@ func parseV11aLocator(locator string) (commit, path, lines string, ok bool) {
 }
 
 func TestTrackedEvidenceJSONAndPoshCobaltD07Crosswalk(t *testing.T) {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("cannot locate test source")
+	wd, err := os.Getwd() // go test runs in the package directory: <root>/internal/engine
+	if err != nil {
+		t.Fatal(err)
 	}
-	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	root := filepath.Clean(filepath.Join(wd, "..", ".."))
 	paths, err := discoverTrackedEvidenceJSON(root)
 	if err != nil {
 		t.Fatal(err)
@@ -431,6 +461,23 @@ func containsString(items []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestDiscoverTrackedEvidenceJSONFailsClosedOnBrokenGitMetadata(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "evidence"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "evidence", "sample.json"), []byte("{}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "missing-git-dir"), filepath.Join(root, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := discoverTrackedEvidenceJSON(root)
+	if err == nil || !strings.Contains(err.Error(), "git ls-files evidence") {
+		t.Fatalf("broken Git metadata must fail closed instead of using the source-export fallback: %v", err)
+	}
 }
 
 func TestStrictEvidenceJSONAdversarialFixtures(t *testing.T) {
