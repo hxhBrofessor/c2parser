@@ -82,3 +82,56 @@ frameworks:
               - <title>Hello World!</title>
             feature: Hello World! response template
             weight: 0.4
+  - id: merlin
+    aliases: []
+    field_groups:
+      http:
+        evidence: UNKNOWN
+        verify: false
+        source:
+          id: v11a-merlin-http-legacy-code
+          citation: Existing Merlin HTTP predicates in the pinned v11a implementation; code provenance only, external provenance pending.
+          revision: 425897e8c36005e001e6f6254ede16117194f9d2
+          locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:matchFrameworkDefaults
+        reason: External provenance pending; item-level records preserve only existing v11a behavior.
+        items:
+          - id: merlin-http-post-root
+            debt_id: B33-D07-MER-HTTP-001
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:117-118
+            kind: request_method_uri_exact
+            message: request
+            method: POST
+            value: /
+            feature: POST /
+            weight: 0.1
+            reason: External provenance pending; this item preserves only the pinned v11a predicate.
+          - id: merlin-http-content-type
+            debt_id: B33-D07-MER-HTTP-002
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:120-121
+            kind: header_trim_equal_fold
+            message: request
+            header: content-type
+            value: application/octet-stream; charset=utf-8
+            feature: Content-Type application/octet-stream; charset=utf-8
+            weight: 0.5
+            reason: External provenance pending; this item preserves only the pinned v11a predicate.
+          - id: merlin-http-authorization-prefix
+            debt_id: B33-D07-MER-HTTP-003
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:123-124
+            kind: header_prefix
+            message: request
+            header: authorization
+            value: Bearer eyJ
+            feature: "Authorization: Bearer <JWT>"
+            weight: 0.3
+            reason: External provenance pending; this item preserves only the pinned v11a predicate.
+          - id: merlin-http-user-agent
+            debt_id: B33-D07-MER-HTTP-004
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:126-127
+            kind: header_exact
+            message: request
+            header: user-agent
+            value: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.85 Safari/537.36
+            feature: Chrome/40.0.2214.85 User-Agent
+            weight: 0.55
+            reason: External provenance pending; this item preserves only the pinned v11a predicate.

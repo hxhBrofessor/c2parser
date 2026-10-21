@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -95,27 +96,86 @@ func (ch *httpChannel) fwAdd(fw, feat string, s float64, frame int64) {
 	}
 }
 
-func loadCovenantHTTPItems() ([]data.Item, error) {
+func loadFrameworkHTTPProfiles() (map[string][]data.Item, error) {
 	p, err := data.Load()
 	if err != nil {
 		return nil, err
 	}
-	return covenantHTTPItems(p)
+	return registeredFrameworkHTTPItems(p)
 }
 
 func covenantHTTPItems(p data.Profiles) ([]data.Item, error) {
-	if len(p.Frameworks) != 1 || p.Frameworks[0].ID != "covenant" {
-		return nil, fmt.Errorf("expected only the covenant framework in the first migration slice")
+	profiles, err := registeredFrameworkHTTPItems(p)
+	if err != nil {
+		return nil, err
 	}
-	fw := p.Frameworks[0]
-	if len(fw.FieldGroups) != 1 {
-		return nil, fmt.Errorf("expected only Covenant http field group in the first migration slice")
+	return append([]data.Item(nil), profiles["covenant/http"]...), nil
+}
+
+// registeredFrameworkHTTPItems admits only the two reviewed groups and their
+// exact D-07 source/debt bindings. It is intentionally not a generic registry.
+func registeredFrameworkHTTPItems(p data.Profiles) (map[string][]data.Item, error) {
+	if p.SchemaVersion != 1 || len(p.Frameworks) != 2 {
+		return nil, fmt.Errorf("UNAUTHORIZED_PROFILE_GROUP: expected exactly Covenant/http and Merlin/http")
 	}
-	g, ok := fw.FieldGroups["http"]
-	if !ok || g.Evidence != data.EvidenceUnknown || g.Verify || g.Source == nil || len(g.Items) != 8 {
-		return nil, fmt.Errorf("Covenant http profile must contain eight registered D-07 legacy items")
+	if p.Frameworks[0].ID != "covenant" || p.Frameworks[1].ID != "merlin" {
+		return nil, fmt.Errorf("UNAUTHORIZED_PROFILE_GROUP: framework iteration order differs from registry")
 	}
-	return append([]data.Item(nil), g.Items...), nil
+	expected := map[string]struct {
+		ids, locators        []string
+		sourceID, debtPrefix string
+		citation, reason     string
+	}{
+		"covenant": {ids: []string{"covenant-http-uri-index", "covenant-http-uri-docs", "covenant-http-uri-test", "covenant-http-user-agent", "covenant-http-cookie", "covenant-http-post-template", "covenant-http-server", "covenant-http-response-template"}, sourceID: "v11a-covenant-http-legacy-code", debtPrefix: "B33-D07-COV-HTTP-", citation: "Existing Covenant HTTP predicates in the pinned v11a implementation; this is code provenance, not external corroboration.", reason: "External provenance pending; this item-level register preserves only existing v11a behavior.", locators: []string{"103-104", "103-104", "103-104", "106-107", "109-110", "112-113", "156-157", "159-160"}},
+		"merlin":   {ids: []string{"merlin-http-post-root", "merlin-http-content-type", "merlin-http-authorization-prefix", "merlin-http-user-agent"}, sourceID: "v11a-merlin-http-legacy-code", debtPrefix: "B33-D07-MER-HTTP-", citation: "Existing Merlin HTTP predicates in the pinned v11a implementation; code provenance only, external provenance pending.", reason: "External provenance pending; item-level records preserve only existing v11a behavior.", locators: []string{"117-118", "120-121", "123-124", "126-127"}},
+	}
+	profiles := make(map[string][]data.Item, 2)
+	seenFramework, seenItems, seenDebts := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for _, fw := range p.Frameworks {
+		want, ok := expected[fw.ID]
+		if !ok || seenFramework[fw.ID] {
+			return nil, fmt.Errorf("UNAUTHORIZED_PROFILE_GROUP: framework %q is not uniquely registered", fw.ID)
+		}
+		seenFramework[fw.ID] = true
+		if len(fw.Aliases) != 0 || len(fw.FieldGroups) != 1 {
+			return nil, fmt.Errorf("UNAUTHORIZED_PROFILE_GROUP: %s has unregistered field groups", fw.ID)
+		}
+		g, ok := fw.FieldGroups["http"]
+		if !ok || g.Evidence != data.EvidenceUnknown || g.Verify || g.Source == nil || len(g.Items) != len(want.ids) {
+			return nil, fmt.Errorf("PROFILE_ITEM_SET_MISMATCH: %s/http has unexpected status or item count", fw.ID)
+		}
+		if g.Source.ID != want.sourceID || g.Source.Citation != want.citation || g.Source.Revision != "425897e8c36005e001e6f6254ede16117194f9d2" || g.Source.Locator != "repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:matchFrameworkDefaults" || g.Reason != want.reason {
+			return nil, fmt.Errorf("PROFILE_SOURCE_MISMATCH: %s/http is not the registered D-07 carry-forward", fw.ID)
+		}
+		for i, item := range g.Items {
+			if item.ID != want.ids[i] || item.DebtID != fmt.Sprintf("%s%03d", want.debtPrefix, i+1) || item.Locator != "repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:"+want.locators[i] {
+				return nil, fmt.Errorf("PROFILE_ITEM_SET_MISMATCH: %s/http item %d has unexpected ID, debt or source locator", fw.ID, i)
+			}
+			if seenItems[item.ID] || seenDebts[item.DebtID] {
+				return nil, fmt.Errorf("PROFILE_ITEM_SET_MISMATCH: duplicate item or debt ID")
+			}
+			seenItems[item.ID], seenDebts[item.DebtID] = true, true
+			if fw.ID == "merlin" && !reflect.DeepEqual(item, expectedMerlinHTTPItems()[i]) {
+				return nil, fmt.Errorf("PROFILE_ITEM_SET_MISMATCH: Merlin item %d differs from its registered exact predicate", i)
+			}
+		}
+		profiles[fw.ID+"/http"] = append([]data.Item(nil), g.Items...)
+	}
+	if !seenFramework["covenant"] || !seenFramework["merlin"] {
+		return nil, fmt.Errorf("PROFILE_ITEM_SET_MISMATCH: required framework is missing")
+	}
+	return profiles, nil
+}
+
+func expectedMerlinHTTPItems() []data.Item {
+	const rev = "425897e8c36005e001e6f6254ede16117194f9d2"
+	base := "repo@" + rev + ":internal/engine/httpdefaults.go:"
+	return []data.Item{
+		{ID: "merlin-http-post-root", DebtID: "B33-D07-MER-HTTP-001", Locator: base + "117-118", Kind: "request_method_uri_exact", Message: "request", Method: "POST", Value: "/", Feature: "POST /", Weight: 0.1, Reason: "External provenance pending; this item preserves only the pinned v11a predicate."},
+		{ID: "merlin-http-content-type", DebtID: "B33-D07-MER-HTTP-002", Locator: base + "120-121", Kind: "header_trim_equal_fold", Message: "request", Header: "content-type", Value: "application/octet-stream; charset=utf-8", Feature: "Content-Type application/octet-stream; charset=utf-8", Weight: 0.5, Reason: "External provenance pending; this item preserves only the pinned v11a predicate."},
+		{ID: "merlin-http-authorization-prefix", DebtID: "B33-D07-MER-HTTP-003", Locator: base + "123-124", Kind: "header_prefix", Message: "request", Header: "authorization", Value: "Bearer eyJ", Feature: "Authorization: Bearer <JWT>", Weight: 0.3, Reason: "External provenance pending; this item preserves only the pinned v11a predicate."},
+		{ID: "merlin-http-user-agent", DebtID: "B33-D07-MER-HTTP-004", Locator: base + "126-127", Kind: "header_exact", Message: "request", Header: "user-agent", Value: "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.85 Safari/537.36", Feature: "Chrome/40.0.2214.85 User-Agent", Weight: 0.55, Reason: "External provenance pending; this item preserves only the pinned v11a predicate."},
+	}
 }
 
 func (e *Engine) matchCovenantHTTP(ch *httpChannel, m *httpMsg, path string, frame int64) {
@@ -147,9 +207,36 @@ func (e *Engine) matchCovenantHTTP(ch *httpChannel, m *httpMsg, path string, fra
 	}
 }
 
+func (e *Engine) matchMerlinHTTP(ch *httpChannel, m *httpMsg, frame int64) {
+	if !m.req {
+		return
+	}
+	path, _, _ := strings.Cut(m.uri, "?")
+	for _, item := range e.merlinHTTP {
+		matched := false
+		switch item.Kind {
+		case "request_method_uri_exact":
+			matched = m.method == item.Method && path == item.Value
+		case "header_trim_equal_fold":
+			matched = strings.EqualFold(strings.TrimSpace(m.hdr[item.Header]), item.Value)
+		case "header_prefix":
+			matched = strings.HasPrefix(m.hdr[item.Header], item.Value)
+		case "header_exact":
+			matched = m.hdr[item.Header] == item.Value
+		}
+		if matched {
+			ch.fwAdd("Merlin", item.Feature, item.Weight, frame)
+		}
+	}
+}
+
 func (e *Engine) matchFrameworkDefaults(ch *httpChannel, m *httpMsg) {
-	if e.covenantHTTP == nil && e.profileErr == nil {
-		e.covenantHTTP, e.profileErr = loadCovenantHTTPItems()
+	if e.covenantHTTP == nil && e.merlinHTTP == nil && e.profileErr == nil {
+		profiles, err := loadFrameworkHTTPProfiles()
+		e.profileErr = err
+		if err == nil {
+			e.covenantHTTP, e.merlinHTTP = profiles["covenant/http"], profiles["merlin/http"]
+		}
 	}
 	if e.profileErr != nil {
 		return
@@ -157,24 +244,13 @@ func (e *Engine) matchFrameworkDefaults(ch *httpChannel, m *httpMsg) {
 	f := m.frame
 	if m.req {
 		path, query, _ := strings.Cut(m.uri, "?")
-		ua, ck := m.hdr["user-agent"], m.hdr["cookie"]
+		ck := m.hdr["cookie"]
 		ct := strings.TrimSpace(m.hdr["content-type"])
 
 		e.matchCovenantHTTP(ch, m, path, f)
 
-		// Merlin
-		if m.method == "POST" && path == "/" {
-			ch.fwAdd("Merlin", "POST /", 0.1, f)
-		}
-		if strings.EqualFold(ct, "application/octet-stream; charset=utf-8") {
-			ch.fwAdd("Merlin", "Content-Type application/octet-stream; charset=utf-8", 0.5, f)
-		}
-		if strings.HasPrefix(m.hdr["authorization"], "Bearer eyJ") {
-			ch.fwAdd("Merlin", "Authorization: Bearer <JWT>", 0.3, f)
-		}
-		if ua == merlinUA {
-			ch.fwAdd("Merlin", "Chrome/40.0.2214.85 User-Agent", 0.55, f)
-		}
+		// Merlin; preserve its original position between Covenant and PoshC2.
+		e.matchMerlinHTTP(ch, m, f)
 
 		// PoshC2
 		if strings.HasPrefix(ck, "SessionID=") {

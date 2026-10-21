@@ -23,7 +23,7 @@ func TestEmbeddedCovenantAssetAndFreshCopies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.SchemaVersion != 1 || len(first.Frameworks) != 1 || first.Frameworks[0].ID != "covenant" {
+	if first.SchemaVersion != 1 || len(first.Frameworks) != 2 || first.Frameworks[0].ID != "covenant" || first.Frameworks[1].ID != "merlin" {
 		t.Fatalf("unexpected embedded profile document: %#v", first)
 	}
 	if len(first.Frameworks[0].FieldGroups["http"].Items) != 8 {
@@ -34,7 +34,7 @@ func TestEmbeddedCovenantAssetAndFreshCopies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(second.Frameworks) != 1 || len(second.Frameworks[0].FieldGroups["http"].Items) != 8 {
+	if len(second.Frameworks) != 2 || len(second.Frameworks[0].FieldGroups["http"].Items) != 8 || len(second.Frameworks[1].FieldGroups["http"].Items) != 4 {
 		t.Fatalf("caller mutation reached package asset: %#v", second)
 	}
 	third, err := data.Load()
@@ -344,7 +344,7 @@ func TestD07FixtureDoesNotMutateEmbeddedAsset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(embedded.Frameworks) != 1 || embedded.Frameworks[0].ID != "covenant" || embedded.Frameworks[0].FieldGroups["http"].Source.ID != "v11a-covenant-http-legacy-code" {
+	if len(embedded.Frameworks) != 2 || embedded.Frameworks[0].ID != "covenant" || embedded.Frameworks[0].FieldGroups["http"].Source.ID != "v11a-covenant-http-legacy-code" || embedded.Frameworks[1].ID != "merlin" || embedded.Frameworks[1].FieldGroups["http"].Source.ID != "v11a-merlin-http-legacy-code" {
 		t.Fatal("test fixture affected production embedded asset")
 	}
 }

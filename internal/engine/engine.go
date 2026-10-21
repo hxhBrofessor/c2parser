@@ -106,6 +106,7 @@ type Engine struct {
 	udpRecs            []ConnRecord
 	cfg                Config
 	covenantHTTP       []data.Item
+	merlinHTTP         []data.Item
 	profileErr         error
 	candidateCollector *candidateCollector // opt-in Base32/Base58 sidecar only
 	internal           []netip.Prefix
@@ -152,7 +153,12 @@ func New(cfg Config) *Engine {
 		httpChans: map[httpChanKey]*httpChannel{}, dns: newDNSState(), names: map[netip.Addr]map[string]bool{},
 		resolved: map[netip.Addr]bool{}, baselines: map[string]*hostBaseline{},
 	}
-	e.covenantHTTP, e.profileErr = loadCovenantHTTPItems()
+	profiles, err := loadFrameworkHTTPProfiles()
+	e.profileErr = err
+	if err == nil {
+		e.covenantHTTP = profiles["covenant/http"]
+		e.merlinHTTP = profiles["merlin/http"]
+	}
 	e.sigma, e.sigmaHits = map[string][]*sigma.Rule{}, map[string]*sigmaHit{}
 	for _, r := range cfg.Sigma {
 		e.sigma[r.Kind] = append(e.sigma[r.Kind], r)

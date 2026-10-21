@@ -63,11 +63,13 @@ type Item struct {
 	Locator string   `yaml:"code_locator"`
 	Kind    string   `yaml:"kind"`
 	Message string   `yaml:"message,omitempty"`
+	Method  string   `yaml:"method,omitempty"`
 	Header  string   `yaml:"header,omitempty"`
 	Value   string   `yaml:"value,omitempty"`
 	Values  []string `yaml:"values,omitempty"`
 	Feature string   `yaml:"feature"`
 	Weight  float64  `yaml:"weight"`
+	Reason  string   `yaml:"reason,omitempty"`
 }
 
 // Source identifies a pinned provenance record. Slice 1 metadata is not
@@ -183,8 +185,8 @@ func ParseProfiles(src []byte) (Profiles, error) {
 				return zero, fmt.Errorf("%s.items: required sequence", groupPath)
 			}
 			items := append([]Item(nil), (*g.Items)...)
-			if len(items) > 0 && (group != "http" || *fw.ID != "covenant") {
-				return zero, fmt.Errorf("%s.items: nonempty items are supported only for the Covenant HTTP slice", groupPath)
+			if len(items) > 0 && (group != "http" || (*fw.ID != "covenant" && *fw.ID != "merlin")) {
+				return zero, fmt.Errorf("%s.items: nonempty items are supported only for registered Covenant/Merlin HTTP slices", groupPath)
 			}
 			if g.Reason != nil && strings.TrimSpace(*g.Reason) == "" {
 				return zero, fmt.Errorf("%s.reason: must be nonempty when present", groupPath)
@@ -306,7 +308,7 @@ func requireKeys(root ast.Node) error {
 						return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d].%s: expected string scalar", i, name, j, key)
 					}
 				}
-				for _, key := range []string{"message", "header", "value"} {
+				for _, key := range []string{"message", "method", "header", "value", "reason"} {
 					if node := mapValue(im, key); node != nil {
 						if _, ok := node.(*ast.StringNode); !ok {
 							return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d].%s: expected string scalar", i, name, j, key)
@@ -370,28 +372,43 @@ func validateItems(path string, items []Item) error {
 		if item.Weight < 0 || item.Weight > 1 || math.IsNaN(item.Weight) || math.IsInf(item.Weight, 0) {
 			return fmt.Errorf("%s.weight: must be finite and within [0,1]", p)
 		}
+		if item.Reason != "" && (strings.TrimSpace(item.Reason) == "" || item.Reason != strings.TrimSpace(item.Reason)) {
+			return fmt.Errorf("%s.reason: must be nonempty and trimmed when present", p)
+		}
 		switch item.Kind {
 		case "uri_exact":
-			if item.Message != "request" || item.Header != "" || item.Value == "" || len(item.Values) != 0 {
+			if item.Message != "request" || item.Method != "" || item.Header != "" || item.Value == "" || len(item.Values) != 0 {
 				return fmt.Errorf("%s: uri_exact requires request message and one value", p)
 			}
+		case "request_method_uri_exact":
+			if item.Message != "request" || item.Method == "" || item.Header != "" || item.Value == "" || len(item.Values) != 0 {
+				return fmt.Errorf("%s: request_method_uri_exact requires request, method and path", p)
+			}
 		case "header_exact":
-			if (item.Message != "request" && item.Message != "response") || item.Header == "" || item.Value == "" || len(item.Values) != 0 {
+			if (item.Message != "request" && item.Message != "response") || item.Method != "" || item.Header == "" || item.Value == "" || len(item.Values) != 0 {
 				return fmt.Errorf("%s: header_exact requires message, header and one value", p)
 			}
-			if !((item.Message == "request" && item.Header == "user-agent") || (item.Message == "response" && item.Header == "server")) {
-				return fmt.Errorf("%s: header_exact supports only existing Covenant request user-agent or response server predicates", p)
+			if !((item.Message == "request" && (item.Header == "user-agent" || item.Header == "authorization")) || (item.Message == "response" && item.Header == "server")) {
+				return fmt.Errorf("%s: header_exact supports only registered request user-agent/authorization or response server predicates", p)
 			}
 		case "header_contains":
-			if item.Message != "request" || item.Header != "cookie" || item.Value == "" || len(item.Values) != 0 {
+			if item.Message != "request" || item.Method != "" || item.Header != "cookie" || item.Value == "" || len(item.Values) != 0 {
 				return fmt.Errorf("%s: header_contains requires message, header and one value", p)
 			}
+		case "header_trim_equal_fold":
+			if item.Message != "request" || item.Method != "" || item.Header != "content-type" || item.Value == "" || len(item.Values) != 0 {
+				return fmt.Errorf("%s: header_trim_equal_fold requires request content-type and one value", p)
+			}
+		case "header_prefix":
+			if item.Message != "request" || item.Method != "" || item.Header != "authorization" || item.Value == "" || len(item.Values) != 0 {
+				return fmt.Errorf("%s: header_prefix requires request authorization and one value", p)
+			}
 		case "body_prefix":
-			if item.Message != "request" || item.Value == "" || item.Header != "" || len(item.Values) != 0 {
+			if item.Message != "request" || item.Method != "" || item.Value == "" || item.Header != "" || len(item.Values) != 0 {
 				return fmt.Errorf("%s: body_prefix requires request message and one value", p)
 			}
 		case "body_contains_any":
-			if item.Message != "response" || len(item.Values) < 2 || item.Header != "" || item.Value != "" {
+			if item.Message != "response" || item.Method != "" || len(item.Values) < 2 || item.Header != "" || item.Value != "" {
 				return fmt.Errorf("%s: body_contains_any requires response message and values", p)
 			}
 		default:
