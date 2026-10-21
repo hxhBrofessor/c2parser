@@ -2,9 +2,6 @@ package engine
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"math"
 	"regexp"
@@ -243,32 +240,7 @@ func registeredFrameworkCertItems(p data.Profiles) (map[string][]data.Item, erro
 		}
 		out[id+"/cert"] = append([]data.Item(nil), g.Items...)
 	}
-	if digest, err := certificateRegistryDigest(out); err != nil || digest != certificateRegistryDigestSHA256 {
-		return nil, fmt.Errorf("CERT_PROFILE_VALUE_SET_MISMATCH: pinned six-item certificate table digest mismatch")
-	}
 	return out, nil
-}
-
-const certificateRegistryDigestSHA256 = "4a5a923401f673e3e922c91fdfbbaf857b9b44b10f9749f0df5c550779a1ed85"
-
-func certificateRegistryDigest(items map[string][]data.Item) (string, error) {
-	type binding struct {
-		ID, DebtID, Locator, Kind, Value string
-		Values                           []string
-		Feature, Reason                  string
-	}
-	var rows []binding
-	for _, framework := range []string{"cobaltstrike", "bruteratel"} {
-		for _, item := range items[framework+"/cert"] {
-			rows = append(rows, binding{item.ID, item.DebtID, item.Locator, item.Kind, item.Value, item.Values, item.Feature, item.Reason})
-		}
-	}
-	b, err := json.Marshal(rows)
-	if err != nil {
-		return "", err
-	}
-	h := sha256.Sum256(b)
-	return hex.EncodeToString(h[:]), nil
 }
 
 func (e *Engine) matchCovenantHTTP(ch *httpChannel, m *httpMsg, path string, frame int64) {

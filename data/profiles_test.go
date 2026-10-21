@@ -301,6 +301,24 @@ func TestActiveHTTPItemsRemainAccepted(t *testing.T) {
 	}
 }
 
+func TestCovenantHTTPWeightIsRequired(t *testing.T) {
+	asset, err := os.ReadFile("framework-fingerprints.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := data.ParseProfiles(asset); err != nil {
+		t.Fatalf("valid Covenant HTTP profile rejected: %v", err)
+	}
+	const weight = "            weight: 0.25"
+	mutated := strings.Replace(string(asset), weight, "", 1)
+	if mutated == string(asset) {
+		t.Fatal("Covenant HTTP weight mutation did not apply")
+	}
+	if _, err := data.ParseProfiles([]byte(mutated)); err == nil || !strings.Contains(err.Error(), "weight: required key missing") {
+		t.Fatalf("missing Covenant HTTP weight was not rejected specifically: %v", err)
+	}
+}
+
 func TestPendingGroupsRequireExactlyEmptyItems(t *testing.T) {
 	const item = `
           - id: pending-fixture-item

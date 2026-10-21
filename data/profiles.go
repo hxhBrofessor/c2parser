@@ -319,6 +319,11 @@ func requireKeys(root ast.Node) error {
 				if !ok {
 					return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d].kind: expected string scalar", i, name, j)
 				}
+				if name == "http" {
+					if err := hasKeys(im, "id", "debt_id", "code_locator", "kind", "feature", "weight"); err != nil {
+						return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d]: %w", i, name, j, err)
+					}
+				}
 				if err := validateItemKeys(im, fwID, name, kindNode.GetValue().(string)); err != nil {
 					return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d]: %w", i, name, j, err)
 				}
