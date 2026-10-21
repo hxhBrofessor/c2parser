@@ -135,3 +135,72 @@ frameworks:
             feature: Chrome/40.0.2214.85 User-Agent
             weight: 0.55
             reason: External provenance pending; this item preserves only the pinned v11a predicate.
+  - id: poshc2
+    aliases: []
+    field_groups:
+      http:
+        evidence: UNKNOWN
+        verify: false
+        source:
+          id: v11a-poshc2-http-legacy-code
+          citation: Existing PoshC2 HTTP predicates in the pinned v11a implementation; this is code provenance, not external corroboration.
+          revision: 425897e8c36005e001e6f6254ede16117194f9d2
+          locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:matchFrameworkDefaults
+        reason: External provenance pending; these items carry forward only pinned v11a behavior.
+        items:
+          - id: poshc2-http-cookie-session-prefix
+            debt_id: B33-D07-POSH-HTTP-001
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:131-132
+            kind: cookie_prefix
+            message: request
+            header: cookie
+            value: SessionID=
+            feature: Cookie SessionID=
+            weight: 0.3
+            reason: External fingerprint provenance pending; this item preserves only the pinned v11a predicate.
+          - id: poshc2-http-server-raw-apache-space
+            debt_id: B33-D07-POSH-HTTP-002
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:163-164
+            kind: response_server_raw_exact
+            message: response
+            value: "Apache "
+            feature: '"Server: Apache " with trailing space'
+            weight: 0.6
+            reason: External fingerprint provenance pending; this item preserves only the pinned v11a predicate.
+          - id: poshc2-http-http10-content-type-case
+            debt_id: B33-D07-POSH-HTTP-003
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:166-167
+            kind: response_proto_and_raw_header_name
+            message: response
+            header: Content-type
+            value: HTTP/1.0
+            feature: HTTP/1.0 response with lower-case Content-type
+            weight: 0.3
+            reason: External fingerprint provenance pending; this item preserves only the pinned v11a predicate.
+          - id: poshc2-http-iis-footer
+            debt_id: B33-D07-POSH-HTTP-004
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:169-170
+            kind: body_contains
+            message: response
+            value: IIS ASP.NET 2.0.43451 Server
+            feature: 404 footer IIS ASP.NET 2.0.43451
+            weight: 0.7
+            reason: External fingerprint provenance pending; this item preserves only the pinned v11a predicate.
+          - id: poshc2-http-apache-debian-footer
+            debt_id: B33-D07-POSH-HTTP-005
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:172-173
+            kind: body_contains
+            message: response
+            value: <address>Apache (Debian) Server
+            feature: unversioned Apache (Debian) 404 footer
+            weight: 0.5
+            reason: External fingerprint provenance pending; this item preserves only the pinned v11a predicate.
+          - id: poshc2-http-slack-app-marker
+            debt_id: B33-D07-POSH-HTTP-006
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:175-176
+            kind: body_contains
+            message: response
+            value: 'slack-app-id" content="#av33f33"'
+            feature: "200 page slack-app-id #av33f33"
+            weight: 0.8
+            reason: External fingerprint provenance pending; this item preserves only the pinned v11a predicate.

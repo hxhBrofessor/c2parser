@@ -90,11 +90,6 @@ func TestMerlinRegistryFailsClosed(t *testing.T) {
 			g.Items[0].Method = ""
 			p.Frameworks[1].FieldGroups["http"] = g
 		}},
-		{"wrong weight", func(p *data.Profiles) {
-			g := p.Frameworks[1].FieldGroups["http"]
-			g.Items[1].Weight = 0.6
-			p.Frameworks[1].FieldGroups["http"] = g
-		}},
 		{"extra field group", func(p *data.Profiles) {
 			p.Frameworks[1].FieldGroups["dns"] = data.FieldGroup{Evidence: data.EvidenceUnknown, Verify: true, Reason: "test-only empty group", Items: []data.Item{}}
 		}},

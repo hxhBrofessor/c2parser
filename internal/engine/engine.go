@@ -107,6 +107,7 @@ type Engine struct {
 	cfg                Config
 	covenantHTTP       []data.Item
 	merlinHTTP         []data.Item
+	poshHTTP           []data.Item
 	profileErr         error
 	candidateCollector *candidateCollector // opt-in Base32/Base58 sidecar only
 	internal           []netip.Prefix
@@ -158,6 +159,7 @@ func New(cfg Config) *Engine {
 	if err == nil {
 		e.covenantHTTP = profiles["covenant/http"]
 		e.merlinHTTP = profiles["merlin/http"]
+		e.poshHTTP = profiles["poshc2/http"]
 	}
 	e.sigma, e.sigmaHits = map[string][]*sigma.Rule{}, map[string]*sigmaHit{}
 	for _, r := range cfg.Sigma {

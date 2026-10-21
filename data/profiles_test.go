@@ -23,7 +23,7 @@ func TestEmbeddedCovenantAssetAndFreshCopies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.SchemaVersion != 1 || len(first.Frameworks) != 2 || first.Frameworks[0].ID != "covenant" || first.Frameworks[1].ID != "merlin" {
+	if first.SchemaVersion != 1 || len(first.Frameworks) != 3 || first.Frameworks[0].ID != "covenant" || first.Frameworks[1].ID != "merlin" {
 		t.Fatalf("unexpected embedded profile document: %#v", first)
 	}
 	if len(first.Frameworks[0].FieldGroups["http"].Items) != 8 {
@@ -34,7 +34,7 @@ func TestEmbeddedCovenantAssetAndFreshCopies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(second.Frameworks) != 2 || len(second.Frameworks[0].FieldGroups["http"].Items) != 8 || len(second.Frameworks[1].FieldGroups["http"].Items) != 4 {
+	if len(second.Frameworks) != 3 || len(second.Frameworks[0].FieldGroups["http"].Items) != 8 || len(second.Frameworks[1].FieldGroups["http"].Items) != 4 || len(second.Frameworks[2].FieldGroups["http"].Items) != 6 {
 		t.Fatalf("caller mutation reached package asset: %#v", second)
 	}
 	third, err := data.Load()
@@ -344,7 +344,50 @@ func TestD07FixtureDoesNotMutateEmbeddedAsset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(embedded.Frameworks) != 2 || embedded.Frameworks[0].ID != "covenant" || embedded.Frameworks[0].FieldGroups["http"].Source.ID != "v11a-covenant-http-legacy-code" || embedded.Frameworks[1].ID != "merlin" || embedded.Frameworks[1].FieldGroups["http"].Source.ID != "v11a-merlin-http-legacy-code" {
+	if len(embedded.Frameworks) != 3 || embedded.Frameworks[0].ID != "covenant" || embedded.Frameworks[0].FieldGroups["http"].Source.ID != "v11a-covenant-http-legacy-code" || embedded.Frameworks[1].ID != "merlin" || embedded.Frameworks[1].FieldGroups["http"].Source.ID != "v11a-merlin-http-legacy-code" || embedded.Frameworks[2].ID != "poshc2" || embedded.Frameworks[2].FieldGroups["http"].Source.ID != "v11a-poshc2-http-legacy-code" {
 		t.Fatal("test fixture affected production embedded asset")
+	}
+}
+
+func TestHeaderExactAuthorizationIsNotRegistered(t *testing.T) {
+	asset, err := os.ReadFile("framework-fingerprints.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := strings.Replace(string(asset), "kind: header_prefix", "kind: header_exact", 1)
+	if input == string(asset) {
+		t.Fatal("fixture mutation did not apply")
+	}
+	_, err = data.ParseProfiles([]byte(input))
+	if err == nil || !strings.Contains(err.Error(), "header_exact supports only") {
+		t.Fatalf("expected precise exact-authorization grammar refusal, got %v", err)
+	}
+}
+
+func TestPoshKindsStrictGrammar(t *testing.T) {
+	asset, err := os.ReadFile("framework-fingerprints.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct{ name, old, replacement string }{
+		{"cookie wrong direction", "kind: cookie_prefix", "kind: cookie_prefix\\n            message: response"},
+		{"cookie wrong header", "header: cookie", "header: authorization"},
+		{"raw server request direction", "kind: response_server_raw_exact", "kind: response_server_raw_exact\\n            message: request"},
+		{"raw header wrong direction", "kind: response_proto_and_raw_header_name", "kind: response_proto_and_raw_header_name\\n            message: request"},
+		{"raw header missing value", "header: Content-type", "header: ''"},
+		{"body wrong direction", "kind: body_contains", "kind: body_contains\\n            message: request"},
+		{"body has header", "kind: body_contains", "kind: body_contains\\n            header: server"},
+		{"empty body marker", "value: IIS ASP.NET 2.0.43451 Server", "value: ''"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := strings.Replace(string(asset), tc.old, tc.replacement, 1)
+			if input == string(asset) {
+				t.Fatal("mutation did not apply")
+			}
+			if _, err := data.ParseProfiles([]byte(input)); err == nil {
+				t.Fatal("invalid Posh matcher shape accepted")
+			}
+		})
 	}
 }

@@ -185,8 +185,8 @@ func ParseProfiles(src []byte) (Profiles, error) {
 				return zero, fmt.Errorf("%s.items: required sequence", groupPath)
 			}
 			items := append([]Item(nil), (*g.Items)...)
-			if len(items) > 0 && (group != "http" || (*fw.ID != "covenant" && *fw.ID != "merlin")) {
-				return zero, fmt.Errorf("%s.items: nonempty items are supported only for registered Covenant/Merlin HTTP slices", groupPath)
+			if len(items) > 0 && (group != "http" || (*fw.ID != "covenant" && *fw.ID != "merlin" && *fw.ID != "poshc2")) {
+				return zero, fmt.Errorf("%s.items: nonempty items are supported only for registered Covenant/Merlin/PoshC2 HTTP slices", groupPath)
 			}
 			if g.Reason != nil && strings.TrimSpace(*g.Reason) == "" {
 				return zero, fmt.Errorf("%s.reason: must be nonempty when present", groupPath)
@@ -388,8 +388,8 @@ func validateItems(path string, items []Item) error {
 			if (item.Message != "request" && item.Message != "response") || item.Method != "" || item.Header == "" || item.Value == "" || len(item.Values) != 0 {
 				return fmt.Errorf("%s: header_exact requires message, header and one value", p)
 			}
-			if !((item.Message == "request" && (item.Header == "user-agent" || item.Header == "authorization")) || (item.Message == "response" && item.Header == "server")) {
-				return fmt.Errorf("%s: header_exact supports only registered request user-agent/authorization or response server predicates", p)
+			if !((item.Message == "request" && item.Header == "user-agent") || (item.Message == "response" && item.Header == "server")) {
+				return fmt.Errorf("%s: header_exact supports only registered request user-agent or response server predicates", p)
 			}
 		case "header_contains":
 			if item.Message != "request" || item.Method != "" || item.Header != "cookie" || item.Value == "" || len(item.Values) != 0 {
@@ -410,6 +410,22 @@ func validateItems(path string, items []Item) error {
 		case "body_contains_any":
 			if item.Message != "response" || item.Method != "" || len(item.Values) < 2 || item.Header != "" || item.Value != "" {
 				return fmt.Errorf("%s: body_contains_any requires response message and values", p)
+			}
+		case "cookie_prefix":
+			if item.Message != "request" || item.Method != "" || item.Header != "cookie" || item.Value == "" || len(item.Values) != 0 {
+				return fmt.Errorf("%s: cookie_prefix requires request cookie and one value", p)
+			}
+		case "response_server_raw_exact":
+			if item.Message != "response" || item.Method != "" || item.Header != "" || item.Value == "" || len(item.Values) != 0 {
+				return fmt.Errorf("%s: response_server_raw_exact requires response and one raw value", p)
+			}
+		case "response_proto_and_raw_header_name":
+			if item.Message != "response" || item.Method != "" || item.Header == "" || item.Value == "" || len(item.Values) != 0 {
+				return fmt.Errorf("%s: response_proto_and_raw_header_name requires response message, raw header name and protocol", p)
+			}
+		case "body_contains":
+			if item.Message != "response" || item.Method != "" || item.Header != "" || item.Value == "" || len(item.Values) != 0 {
+				return fmt.Errorf("%s: body_contains requires response and one byte string", p)
 			}
 		default:
 			return fmt.Errorf("%s.kind: unsupported matcher kind %q", p, item.Kind)

@@ -1,0 +1,72 @@
+{
+  "source_commit": "425897e8c36005e001e6f6254ede16117194f9d2",
+  "claim": "Pinned code carry-forward only; not independent fingerprint intelligence.",
+  "ordered_predicates": [
+    {
+      "id": "poshc2-http-cookie-session-prefix",
+      "debt_id": "B33-D07-POSH-HTTP-001",
+      "source_commit": "425897e8c36005e001e6f6254ede16117194f9d2",
+      "source_path": "internal/engine/httpdefaults.go",
+      "source_lines": "131-132",
+      "predicate": "request cookie HasPrefix(SessionID=)",
+      "feature": "Cookie SessionID=",
+      "weight": 0.3,
+      "provenance": "pinned-code carry-forward only; external corroboration pending"
+    },
+    {
+      "id": "poshc2-http-server-raw-apache-space",
+      "debt_id": "B33-D07-POSH-HTTP-002",
+      "source_commit": "425897e8c36005e001e6f6254ede16117194f9d2",
+      "source_path": "internal/engine/httpdefaults.go",
+      "source_lines": "163-164",
+      "predicate": "response raw serverRaw equals Apache plus one trailing U+0020",
+      "feature": "\"Server: Apache \" with trailing space",
+      "weight": 0.6,
+      "provenance": "pinned-code carry-forward only; external corroboration pending"
+    },
+    {
+      "id": "poshc2-http-http10-content-type-case",
+      "debt_id": "B33-D07-POSH-HTTP-003",
+      "source_commit": "425897e8c36005e001e6f6254ede16117194f9d2",
+      "source_path": "internal/engine/httpdefaults.go",
+      "source_lines": "166-167",
+      "predicate": "response proto HTTP/1.0 and exact raw header name Content-type",
+      "feature": "HTTP/1.0 response with lower-case Content-type",
+      "weight": 0.3,
+      "provenance": "pinned-code carry-forward only; external corroboration pending"
+    },
+    {
+      "id": "poshc2-http-iis-footer",
+      "debt_id": "B33-D07-POSH-HTTP-004",
+      "source_commit": "425897e8c36005e001e6f6254ede16117194f9d2",
+      "source_path": "internal/engine/httpdefaults.go",
+      "source_lines": "169-170",
+      "predicate": "response body byte substring IIS ASP.NET 2.0.43451 Server",
+      "feature": "404 footer IIS ASP.NET 2.0.43451",
+      "weight": 0.7,
+      "provenance": "pinned-code carry-forward only; external corroboration pending"
+    },
+    {
+      "id": "poshc2-http-apache-debian-footer",
+      "debt_id": "B33-D07-POSH-HTTP-005",
+      "source_commit": "425897e8c36005e001e6f6254ede16117194f9d2",
+      "source_path": "internal/engine/httpdefaults.go",
+      "source_lines": "172-173",
+      "predicate": "response body byte substring <address>Apache (Debian) Server",
+      "feature": "unversioned Apache (Debian) 404 footer",
+      "weight": 0.5,
+      "provenance": "pinned-code carry-forward only; external corroboration pending"
+    },
+    {
+      "id": "poshc2-http-slack-app-marker",
+      "debt_id": "B33-D07-POSH-HTTP-006",
+      "source_commit": "425897e8c36005e001e6f6254ede16117194f9d2",
+      "source_path": "internal/engine/httpdefaults.go",
+      "source_lines": "175-176",
+      "predicate": "response body byte substring slack-app-id\" content=\"#av33f33\"",
+      "feature": "200 page slack-app-id #av33f33",
+      "weight": 0.8,
+      "provenance": "pinned-code carry-forward only; external corroboration pending"
+    }
+  ]
+}\n
