@@ -55,21 +55,26 @@ type FieldGroup struct {
 	Reason string  `yaml:"reason,omitempty"`
 }
 
-// Item is a deliberately small matcher vocabulary for existing fingerprints.
-// It is not an expression language; each kind has a fixed, typed shape.
+// Item is a deliberately small matcher vocabulary for registered fingerprints.
+// It is not an expression language; each kind has a fixed, typed shape. The four
+// Cobalt-only fields are accepted only by their registered Cobalt HTTP kinds.
 type Item struct {
-	ID      string   `yaml:"id"`
-	DebtID  string   `yaml:"debt_id"`
-	Locator string   `yaml:"code_locator"`
-	Kind    string   `yaml:"kind"`
-	Message string   `yaml:"message,omitempty"`
-	Method  string   `yaml:"method,omitempty"`
-	Header  string   `yaml:"header,omitempty"`
-	Value   string   `yaml:"value,omitempty"`
-	Values  []string `yaml:"values,omitempty"`
-	Feature string   `yaml:"feature"`
-	Weight  float64  `yaml:"weight"`
-	Reason  string   `yaml:"reason,omitempty"`
+	ID             string   `yaml:"id"`
+	DebtID         string   `yaml:"debt_id"`
+	Locator        string   `yaml:"code_locator"`
+	Kind           string   `yaml:"kind"`
+	Message        string   `yaml:"message,omitempty"`
+	Method         string   `yaml:"method,omitempty"`
+	Header         string   `yaml:"header,omitempty"`
+	Value          string   `yaml:"value,omitempty"`
+	Values         []string `yaml:"values,omitempty"`
+	Path           string   `yaml:"path,omitempty"`
+	ElevatedWeight float64  `yaml:"elevated_weight,omitempty"`
+	Checksums      []int    `yaml:"checksums,omitempty"`
+	Status         int      `yaml:"status,omitempty"`
+	Feature        string   `yaml:"feature"`
+	Weight         float64  `yaml:"weight"`
+	Reason         string   `yaml:"reason,omitempty"`
 }
 
 // Source identifies a pinned provenance record. Slice 1 metadata is not
@@ -185,8 +190,8 @@ func ParseProfiles(src []byte) (Profiles, error) {
 				return zero, fmt.Errorf("%s.items: required sequence", groupPath)
 			}
 			items := append([]Item(nil), (*g.Items)...)
-			if len(items) > 0 && (group != "http" || (*fw.ID != "covenant" && *fw.ID != "merlin" && *fw.ID != "poshc2")) {
-				return zero, fmt.Errorf("%s.items: nonempty items are supported only for registered Covenant/Merlin/PoshC2 HTTP slices", groupPath)
+			if len(items) > 0 && (group != "http" || (*fw.ID != "covenant" && *fw.ID != "merlin" && *fw.ID != "poshc2" && *fw.ID != "cobaltstrike")) {
+				return zero, fmt.Errorf("%s.items: nonempty items are supported only for registered HTTP slices", groupPath)
 			}
 			if g.Reason != nil && strings.TrimSpace(*g.Reason) == "" {
 				return zero, fmt.Errorf("%s.reason: must be nonempty when present", groupPath)
@@ -202,7 +207,7 @@ func ParseProfiles(src []byte) (Profiles, error) {
 			if err := validateGroup(groupPath, value); err != nil {
 				return zero, err
 			}
-			if err := validateItems(groupPath, value.Items); err != nil {
+			if err := validateItems(groupPath, *fw.ID, group, value.Items); err != nil {
 				return zero, err
 			}
 			newFW.FieldGroups[group] = value
@@ -241,9 +246,11 @@ func requireKeys(root ast.Node) error {
 		if err := hasKeys(fw, "id", "field_groups"); err != nil {
 			return fmt.Errorf("frameworks[%d]: %w", i, err)
 		}
-		if _, ok := mapValue(fw, "id").(*ast.StringNode); !ok {
+		fwIDNode, ok := mapValue(fw, "id").(*ast.StringNode)
+		if !ok {
 			return fmt.Errorf("frameworks[%d].id: expected string scalar", i)
 		}
+		fwID := fwIDNode.GetValue().(string)
 		if aliases := mapValue(fw, "aliases"); aliases != nil {
 			seq, ok := aliases.(*ast.SequenceNode)
 			if !ok {
@@ -308,7 +315,14 @@ func requireKeys(root ast.Node) error {
 						return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d].%s: expected string scalar", i, name, j, key)
 					}
 				}
-				for _, key := range []string{"message", "method", "header", "value", "reason"} {
+				kindNode, ok := mapValue(im, "kind").(*ast.StringNode)
+				if !ok {
+					return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d].kind: expected string scalar", i, name, j)
+				}
+				if err := validateItemKeys(im, fwID, name, kindNode.GetValue().(string)); err != nil {
+					return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d]: %w", i, name, j, err)
+				}
+				for _, key := range []string{"message", "method", "header", "value", "path", "reason"} {
 					if node := mapValue(im, key); node != nil {
 						if _, ok := node.(*ast.StringNode); !ok {
 							return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d].%s: expected string scalar", i, name, j, key)
@@ -324,6 +338,27 @@ func requireKeys(root ast.Node) error {
 						if _, ok := value.(*ast.StringNode); !ok {
 							return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d].values[%d]: expected string scalar", i, name, j, k)
 						}
+					}
+				}
+				if node := mapValue(im, "elevated_weight"); node != nil {
+					if _, ok := node.(*ast.FloatNode); !ok {
+						return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d].elevated_weight: expected float scalar", i, name, j)
+					}
+				}
+				if node := mapValue(im, "checksums"); node != nil {
+					seq, ok := node.(*ast.SequenceNode)
+					if !ok {
+						return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d].checksums: expected integer sequence", i, name, j)
+					}
+					for k, value := range seq.Values {
+						if _, ok := value.(*ast.IntegerNode); !ok {
+							return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d].checksums[%d]: expected integer scalar", i, name, j, k)
+						}
+					}
+				}
+				if node := mapValue(im, "status"); node != nil {
+					if _, ok := node.(*ast.IntegerNode); !ok {
+						return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d].status: expected integer scalar", i, name, j)
 					}
 				}
 				if _, ok := mapValue(im, "weight").(*ast.FloatNode); !ok {
@@ -351,7 +386,14 @@ func requireKeys(root ast.Node) error {
 	return nil
 }
 
-func validateItems(path string, items []Item) error {
+func validateItems(path, frameworkID, group string, items []Item) error {
+	if frameworkID == "cobaltstrike" {
+		if group != "http" || len(items) != 4 {
+			return fmt.Errorf("%s: Cobalt Strike supports exactly four registered HTTP items", path)
+		}
+	} else if len(items) > 0 && group != "http" {
+		return fmt.Errorf("%s: non-HTTP matcher items are not supported", path)
+	}
 	seen := map[string]bool{}
 	for i, item := range items {
 		p := fmt.Sprintf("%s.items[%d]", path, i)
@@ -427,12 +469,103 @@ func validateItems(path string, items []Item) error {
 			if item.Message != "response" || item.Method != "" || item.Header != "" || item.Value == "" || len(item.Values) != 0 {
 				return fmt.Errorf("%s: body_contains requires response and one byte string", p)
 			}
+		case "get_default_uri_b64_cookie":
+			if frameworkID != "cobaltstrike" || group != "http" || item.Message != "request" || item.Method != "GET" || item.Header != "cookie" || item.Value != "" || len(item.Values) != 21 || item.Path != "" || item.ElevatedWeight != 0 || len(item.Checksums) != 0 || item.Status != 0 || strings.Count(item.Feature, "{path}") != 1 || strings.Contains(strings.Replace(item.Feature, "{path}", "", 1), "{") || strings.Contains(strings.Replace(item.Feature, "{path}", "", 1), "}") {
+				return fmt.Errorf("%s: malformed registered Cobalt GET default-URI predicate", p)
+			}
+			if err := uniquePaths(p, item.Values); err != nil {
+				return err
+			}
+		case "post_submit_id":
+			if frameworkID != "cobaltstrike" || group != "http" || item.Message != "request" || item.Method != "POST" || item.Header != "content-type" || item.Value == "" || item.Path == "" || strings.Contains(item.Path, "?") || !strings.HasPrefix(item.Path, "/") || item.ElevatedWeight <= item.Weight || item.ElevatedWeight > 1 || math.IsNaN(item.ElevatedWeight) || math.IsInf(item.ElevatedWeight, 0) || len(item.Values) != 0 || len(item.Checksums) != 0 || item.Status != 0 || strings.ContainsAny(item.Feature, "{}") {
+				return fmt.Errorf("%s: malformed registered Cobalt POST submit-ID predicate", p)
+			}
+		case "get_checksum8_stager":
+			if frameworkID != "cobaltstrike" || group != "http" || item.Message != "request" || item.Method != "GET" || item.Header != "" || item.Value != "" || item.Path != "" || item.ElevatedWeight != 0 || len(item.Checksums) == 0 || item.Status != 0 || strings.Count(item.Feature, "{path}") != 1 || strings.Count(item.Feature, "{sum}") != 1 {
+				return fmt.Errorf("%s: malformed registered Cobalt checksum8 predicate", p)
+			}
+			rest := strings.Replace(item.Feature, "{path}", "", 1)
+			rest = strings.Replace(rest, "{sum}", "", 1)
+			if strings.ContainsAny(rest, "{}") {
+				return fmt.Errorf("%s: unsupported Cobalt feature placeholder", p)
+			}
+			checkSeen := map[int]bool{}
+			for _, sum := range item.Checksums {
+				if sum < 0 || sum > 255 || checkSeen[sum] {
+					return fmt.Errorf("%s.checksums: values must be unique integers in [0,255]", p)
+				}
+				checkSeen[sum] = true
+			}
+		case "response_empty_404":
+			if frameworkID != "cobaltstrike" || group != "http" || item.Message != "response" || item.Method != "" || item.Header != "content-type" || item.Value == "" || item.Path != "" || item.ElevatedWeight != 0 || len(item.Values) != 0 || len(item.Checksums) != 0 || item.Status < 100 || item.Status > 599 || strings.ContainsAny(item.Feature, "{}") {
+				return fmt.Errorf("%s: malformed registered Cobalt empty-404 predicate", p)
+			}
 		default:
 			return fmt.Errorf("%s.kind: unsupported matcher kind %q", p, item.Kind)
+		}
+		if frameworkID != "cobaltstrike" && (item.Path != "" || item.ElevatedWeight != 0 || len(item.Checksums) != 0 || item.Status != 0 || strings.HasPrefix(item.Kind, "get_") || strings.HasPrefix(item.Kind, "post_submit") || item.Kind == "response_empty_404") {
+			return fmt.Errorf("%s: Cobalt-only fields and kinds are not allowed outside cobaltstrike/http", p)
 		}
 		if item.Kind != "header_exact" && item.Kind != "header_contains" && item.Message != "request" && item.Message != "response" {
 			return fmt.Errorf("%s.message: must be request or response", p)
 		}
+	}
+	return nil
+}
+
+func validateItemKeys(node *ast.MappingNode, frameworkID, group, kind string) error {
+	allowed := map[string]bool{"id": true, "debt_id": true, "code_locator": true, "kind": true, "feature": true, "weight": true, "message": true, "method": true, "header": true, "value": true, "values": true, "reason": true}
+	if frameworkID != "cobaltstrike" {
+		for _, key := range []string{"path", "elevated_weight", "checksums", "status"} {
+			if mapValue(node, key) != nil {
+				return fmt.Errorf("%s: Cobalt-only field %q is forbidden", group, key)
+			}
+		}
+		return nil
+	}
+	sets := map[string][]string{
+		"get_default_uri_b64_cookie": {"id", "debt_id", "code_locator", "kind", "message", "method", "header", "values", "feature", "weight", "reason"},
+		"post_submit_id":             {"id", "debt_id", "code_locator", "kind", "message", "method", "header", "value", "path", "elevated_weight", "feature", "weight", "reason"},
+		"get_checksum8_stager":       {"id", "debt_id", "code_locator", "kind", "message", "method", "checksums", "feature", "weight", "reason"},
+		"response_empty_404":         {"id", "debt_id", "code_locator", "kind", "message", "header", "value", "status", "feature", "weight", "reason"},
+	}
+	required, ok := sets[kind]
+	if !ok || group != "http" {
+		return fmt.Errorf("unsupported Cobalt matcher kind or group")
+	}
+	expected := map[string]bool{}
+	for _, key := range required {
+		expected[key] = true
+		allowed[key] = true
+	}
+	for _, entry := range node.Values {
+		key, ok := entry.Key.(ast.ScalarNode)
+		if !ok {
+			return fmt.Errorf("item keys must be strings")
+		}
+		name, ok := key.GetValue().(string)
+		if !ok || !allowed[name] {
+			return fmt.Errorf("unknown item field")
+		}
+		if !expected[name] {
+			return fmt.Errorf("%s: field %q is not permitted for %s", group, name, kind)
+		}
+	}
+	for _, key := range required {
+		if mapValue(node, key) == nil {
+			return fmt.Errorf("%s: required field %q missing", kind, key)
+		}
+	}
+	return nil
+}
+
+func uniquePaths(path string, values []string) error {
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		if !strings.HasPrefix(value, "/") || strings.Contains(value, "?") || seen[value] {
+			return fmt.Errorf("%s.values: URI paths must be unique absolute paths without query", path)
+		}
+		seen[value] = true
 	}
 	return nil
 }

@@ -40,15 +40,6 @@ type fwState struct {
 	frames []int64
 }
 
-var csDefaultURIs = map[string]bool{}
-
-func init() {
-	for _, u := range strings.Fields(`/ca /dpixel /__utm.gif /pixel.gif /g.pixel /dot.gif /updates.rss /fwlink /cm /cx
-		/pixel /match /visit.js /load /push /ptj /j.ad /ga.js /en_US/all.js /activity /IE9CompatViewList.xml`) {
-		csDefaultURIs[u] = true
-	}
-}
-
 var (
 	b64CookieRe   = regexp.MustCompile(`^[A-Za-z0-9+/]{40,}={0,2}$`)
 	csSubmitQRe   = regexp.MustCompile(`^id=\d+$`)
@@ -58,6 +49,11 @@ var (
 // checksum8 is Cobalt Strike / Metasploit's stager URI check: the byte sum
 // of the 4-character path mod 256 is 92 (x86) or 93 (x64).
 func checksum8(path string) (int, bool) {
+	sum, ok := checksum8Sum(path)
+	return sum, ok && (sum == 92 || sum == 93)
+}
+
+func checksum8Sum(path string) (int, bool) {
 	if !csStagerURIRe.MatchString(path) {
 		return 0, false
 	}
@@ -66,7 +62,7 @@ func checksum8(path string) (int, bool) {
 		sum += int(path[i])
 	}
 	sum %= 256
-	return sum, sum == 92 || sum == 93
+	return sum, true
 }
 
 func hasHeaderName(m *httpMsg, exact string) bool {
@@ -114,8 +110,8 @@ func covenantHTTPItems(p data.Profiles) ([]data.Item, error) {
 // registeredFrameworkHTTPItems is closed to reviewed framework/group identities.
 // YAML holds predicate values; independent frozen tables are the exact-value oracle.
 func registeredFrameworkHTTPItems(p data.Profiles) (map[string][]data.Item, error) {
-	if p.SchemaVersion != 1 || len(p.Frameworks) != 3 {
-		return nil, fmt.Errorf("UNAUTHORIZED_PROFILE_GROUP: expected exactly three registered HTTP groups")
+	if p.SchemaVersion != 1 || len(p.Frameworks) != 4 {
+		return nil, fmt.Errorf("UNAUTHORIZED_PROFILE_GROUP: expected exactly four registered HTTP groups")
 	}
 	type spec struct {
 		id, sourceID, citation, reason, sourceLoc, prefix string
@@ -126,8 +122,9 @@ func registeredFrameworkHTTPItems(p data.Profiles) (map[string][]data.Item, erro
 		{"covenant", "v11a-covenant-http-legacy-code", "Existing Covenant HTTP predicates in the pinned v11a implementation; this is code provenance, not external corroboration.", "External provenance pending; this item-level register preserves only existing v11a behavior.", "matchFrameworkDefaults", "B33-D07-COV-HTTP-", []string{"covenant-http-uri-index", "covenant-http-uri-docs", "covenant-http-uri-test", "covenant-http-user-agent", "covenant-http-cookie", "covenant-http-post-template", "covenant-http-server", "covenant-http-response-template"}, []string{"103-104", "103-104", "103-104", "106-107", "109-110", "112-113", "156-157", "159-160"}, []string{"uri_exact", "uri_exact", "uri_exact", "header_exact", "header_contains", "body_prefix", "header_exact", "body_contains_any"}, []string{"request", "request", "request", "request", "request", "request", "response", "response"}},
 		{"merlin", "v11a-merlin-http-legacy-code", "Existing Merlin HTTP predicates in the pinned v11a implementation; code provenance only, external provenance pending.", "External provenance pending; item-level records preserve only existing v11a behavior.", "matchFrameworkDefaults", "B33-D07-MER-HTTP-", []string{"merlin-http-post-root", "merlin-http-content-type", "merlin-http-authorization-prefix", "merlin-http-user-agent"}, []string{"117-118", "120-121", "123-124", "126-127"}, []string{"request_method_uri_exact", "header_trim_equal_fold", "header_prefix", "header_exact"}, []string{"request", "request", "request", "request"}},
 		{"poshc2", "v11a-poshc2-http-legacy-code", "Existing PoshC2 HTTP predicates in the pinned v11a implementation; this is code provenance, not external corroboration.", "External provenance pending; these items carry forward only pinned v11a behavior.", "matchFrameworkDefaults", "B33-D07-POSH-HTTP-", []string{"poshc2-http-cookie-session-prefix", "poshc2-http-server-raw-apache-space", "poshc2-http-http10-content-type-case", "poshc2-http-iis-footer", "poshc2-http-apache-debian-footer", "poshc2-http-slack-app-marker"}, []string{"131-132", "163-164", "166-167", "169-170", "172-173", "175-176"}, []string{"cookie_prefix", "response_server_raw_exact", "response_proto_and_raw_header_name", "body_contains", "body_contains", "body_contains"}, []string{"request", "response", "response", "response", "response", "response"}},
+		{"cobaltstrike", "v11a-cobaltstrike-http-legacy-code", "Pinned v11a Cobalt Strike HTTP implementation; code carry-forward only, external corroboration pending.", "External provenance pending; these items carry forward only pinned v11a code behavior and are not externally verified.", "matchFrameworkDefaults", "B33-D07-CS-HTTP-", []string{"cobaltstrike-http-get-default-uri-cookie", "cobaltstrike-http-post-submit-id", "cobaltstrike-http-get-checksum8-stager", "cobaltstrike-http-response-empty-404"}, []string{"43-44", "139-145", "146-150", "178-180"}, []string{"get_default_uri_b64_cookie", "post_submit_id", "get_checksum8_stager", "response_empty_404"}, []string{"request", "request", "request", "response"}},
 	}
-	out := make(map[string][]data.Item, 3)
+	out := make(map[string][]data.Item, 4)
 	seenID, seenDebt := map[string]bool{}, map[string]bool{}
 	for fi, fw := range p.Frameworks {
 		sp := specs[fi]
@@ -150,6 +147,9 @@ func registeredFrameworkHTTPItems(p data.Profiles) (map[string][]data.Item, erro
 			}
 			seenID[it.ID] = true
 			seenDebt[it.DebtID] = true
+			if fw.ID == "cobaltstrike" && (it.Reason == "" || it.DebtID != fmt.Sprintf("%s%03d", sp.prefix, i+1)) {
+				return nil, fmt.Errorf("PROFILE_ITEM_SET_MISMATCH: Cobalt provenance or debt binding")
+			}
 		}
 		out[fw.ID+"/http"] = append([]data.Item(nil), g.Items...)
 	}
@@ -234,11 +234,11 @@ func (e *Engine) matchPoshHTTP(ch *httpChannel, m *httpMsg, frame int64) error {
 }
 
 func (e *Engine) matchFrameworkDefaults(ch *httpChannel, m *httpMsg) {
-	if e.covenantHTTP == nil && e.merlinHTTP == nil && e.poshHTTP == nil && e.profileErr == nil {
+	if e.covenantHTTP == nil && e.merlinHTTP == nil && e.poshHTTP == nil && e.cobaltHTTP == nil && e.profileErr == nil {
 		profiles, err := loadFrameworkHTTPProfiles()
 		e.profileErr = err
 		if err == nil {
-			e.covenantHTTP, e.merlinHTTP, e.poshHTTP = profiles["covenant/http"], profiles["merlin/http"], profiles["poshc2/http"]
+			e.covenantHTTP, e.merlinHTTP, e.poshHTTP, e.cobaltHTTP = profiles["covenant/http"], profiles["merlin/http"], profiles["poshc2/http"], profiles["cobaltstrike/http"]
 		}
 	}
 	if e.profileErr != nil {
@@ -247,7 +247,6 @@ func (e *Engine) matchFrameworkDefaults(ch *httpChannel, m *httpMsg) {
 	f := m.frame
 	if m.req {
 		path, query, _ := strings.Cut(m.uri, "?")
-		ck := m.hdr["cookie"]
 		ct := strings.TrimSpace(m.hdr["content-type"])
 
 		e.matchCovenantHTTP(ch, m, path, f)
@@ -261,22 +260,7 @@ func (e *Engine) matchFrameworkDefaults(ch *httpChannel, m *httpMsg) {
 			return
 		}
 
-		// Cobalt Strike (no malleable profile)
-		if m.method == "GET" && csDefaultURIs[path] && b64CookieRe.MatchString(ck) {
-			ch.fwAdd("Cobalt Strike", "GET default URI "+path+" with bare base64 Cookie metadata", 0.6, f)
-		}
-		if m.method == "POST" && path == "/submit.php" && csSubmitQRe.MatchString(query) {
-			s := 0.55
-			if strings.EqualFold(ct, "application/octet-stream") {
-				s = 0.7
-			}
-			ch.fwAdd("Cobalt Strike", "POST /submit.php?id=<n> (task output)", s, f)
-		}
-		if m.method == "GET" {
-			if sum, ok := checksum8(path); ok {
-				ch.fwAdd("Cobalt Strike", fmt.Sprintf("stager URI %s (checksum8 = %d)", path, sum), 0.35, f)
-			}
-		}
+		e.matchCobaltHTTP(ch, m, path, query, ct, f)
 		return
 	}
 
@@ -287,9 +271,57 @@ func (e *Engine) matchFrameworkDefaults(ch *httpChannel, m *httpMsg) {
 		e.profileErr = err
 		return
 	}
-	// Cobalt Strike
-	if m.status == 404 && ct == "text/plain" && m.bodyLen == 0 && m.hdr["content-length"] == "0" {
-		ch.fwAdd("Cobalt Strike", "empty text/plain 404", 0.2, f)
+	e.matchCobaltHTTP(ch, m, "", "", ct, f)
+}
+
+func (e *Engine) matchCobaltHTTP(ch *httpChannel, m *httpMsg, path, query, contentType string, frame int64) {
+	for _, item := range e.cobaltHTTP {
+		if (item.Message == "request") != m.req {
+			continue
+		}
+		matched := false
+		feature, weight := item.Feature, item.Weight
+		switch item.Kind {
+		case "get_default_uri_b64_cookie":
+			if m.method != item.Method || !b64CookieRe.MatchString(m.hdr[item.Header]) {
+				continue
+			}
+			for _, uri := range item.Values {
+				if path == uri {
+					matched = true
+					break
+				}
+			}
+			feature = strings.Replace(item.Feature, "{path}", path, 1)
+		case "post_submit_id":
+			matched = m.method == item.Method && path == item.Path && csSubmitQRe.MatchString(query)
+			if matched && strings.EqualFold(contentType, item.Value) {
+				weight = item.ElevatedWeight
+			}
+		case "get_checksum8_stager":
+			if m.method != item.Method {
+				continue
+			}
+			sum, ok := checksum8Sum(path)
+			if !ok {
+				continue
+			}
+			for _, allowed := range item.Checksums {
+				if sum == allowed {
+					matched = true
+					break
+				}
+			}
+			feature = strings.Replace(strings.Replace(item.Feature, "{path}", path, 1), "{sum}", fmt.Sprint(sum), 1)
+		case "response_empty_404":
+			matched = m.status == item.Status && contentType == item.Value && m.bodyLen == 0 && m.hdr["content-length"] == "0"
+		default:
+			e.profileErr = fmt.Errorf("COBALT_UNSUPPORTED_KIND: %s", item.Kind)
+			return
+		}
+		if matched {
+			ch.fwAdd("Cobalt Strike", feature, weight, frame)
+		}
 	}
 }
 

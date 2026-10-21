@@ -1,0 +1,11 @@
+{
+  "source_commit": "425897e8c36005e001e6f6254ede16117194f9d2",
+  "claim": "Pinned v11a code carry-forward only; not independent fingerprint intelligence.",
+  "external_provenance": "PENDING",
+  "ordered_predicates": [
+    {"id":"cobaltstrike-http-get-default-uri-cookie","debt_id":"B33-D07-CS-HTTP-001","source_path":"internal/engine/httpdefaults.go","source_lines":"43-44","match_lines":"135-138","predicate":"source-ordered URI inventory plus request match","weight":0.6},
+    {"id":"cobaltstrike-http-post-submit-id","debt_id":"B33-D07-CS-HTTP-002","source_path":"internal/engine/httpdefaults.go","source_lines":"139-145","predicate":"POST submit id with optional content-type elevated weight","weights":[0.55,0.7]},
+    {"id":"cobaltstrike-http-get-checksum8-stager","debt_id":"B33-D07-CS-HTTP-003","source_path":"internal/engine/httpdefaults.go","source_lines":"146-150","predicate":"GET four-byte path byte checksum membership","weight":0.35},
+    {"id":"cobaltstrike-http-response-empty-404","debt_id":"B33-D07-CS-HTTP-004","source_path":"internal/engine/httpdefaults.go","source_lines":"178-180","predicate":"empty text/plain 404 response","weight":0.2}
+  ]
+}

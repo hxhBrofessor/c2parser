@@ -204,3 +204,61 @@ frameworks:
             feature: "200 page slack-app-id #av33f33"
             weight: 0.8
             reason: External fingerprint provenance pending; this item preserves only the pinned v11a predicate.
+  - id: cobaltstrike
+    aliases: []
+    field_groups:
+      http:
+        evidence: UNKNOWN
+        verify: false
+        source:
+          id: v11a-cobaltstrike-http-legacy-code
+          citation: Pinned v11a Cobalt Strike HTTP implementation; code carry-forward only, external corroboration pending.
+          revision: 425897e8c36005e001e6f6254ede16117194f9d2
+          locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:matchFrameworkDefaults
+        reason: External provenance pending; these items carry forward only pinned v11a code behavior and are not externally verified.
+        items:
+          - id: cobaltstrike-http-get-default-uri-cookie
+            debt_id: B33-D07-CS-HTTP-001
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:43-44
+            kind: get_default_uri_b64_cookie
+            message: request
+            method: GET
+            header: cookie
+            values: [/ca, /dpixel, /__utm.gif, /pixel.gif, /g.pixel, /dot.gif, /updates.rss, /fwlink, /cm, /cx, /pixel, /match, /visit.js, /load, /push, /ptj, /j.ad, /ga.js, /en_US/all.js, /activity, /IE9CompatViewList.xml]
+            feature: GET default URI {path} with bare base64 Cookie metadata
+            weight: 0.60
+            reason: Pinned v11a code carry-forward only; external provenance is pending.
+          - id: cobaltstrike-http-post-submit-id
+            debt_id: B33-D07-CS-HTTP-002
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:139-145
+            kind: post_submit_id
+            message: request
+            method: POST
+            header: content-type
+            value: application/octet-stream
+            path: /submit.php
+            feature: POST /submit.php?id=<n> (task output)
+            weight: 0.55
+            elevated_weight: 0.70
+            reason: Pinned v11a code carry-forward only; external provenance is pending.
+          - id: cobaltstrike-http-get-checksum8-stager
+            debt_id: B33-D07-CS-HTTP-003
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:146-150
+            kind: get_checksum8_stager
+            message: request
+            method: GET
+            checksums: [92, 93]
+            feature: stager URI {path} (checksum8 = {sum})
+            weight: 0.35
+            reason: Pinned v11a code carry-forward only; external provenance is pending.
+          - id: cobaltstrike-http-response-empty-404
+            debt_id: B33-D07-CS-HTTP-004
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:178-180
+            kind: response_empty_404
+            message: response
+            header: content-type
+            value: text/plain
+            status: 404
+            feature: empty text/plain 404
+            weight: 0.20
+            reason: Pinned v11a code carry-forward only; external provenance is pending.

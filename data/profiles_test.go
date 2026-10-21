@@ -1,7 +1,9 @@
 package data_test
 
 import (
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -18,12 +20,87 @@ func readFixture(t *testing.T, name string) []byte {
 	return b
 }
 
+func TestTrackedEvidenceJSONAndCobaltD07Crosswalk(t *testing.T) {
+	paths, err := filepath.Glob("../evidence/*.json")
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("evidence JSON inventory: %v (%d files)", err, len(paths))
+	}
+	for _, path := range paths {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var value any
+		if err := json.Unmarshal(b, &value); err != nil {
+			t.Errorf("%s: invalid JSON: %v", path, err)
+		}
+		if len(b) == 0 || b[len(b)-1] != '\n' {
+			t.Errorf("%s: expected LF termination", path)
+		}
+	}
+	var debt struct {
+		Items []struct {
+			ID           string `json:"id"`
+			DebtID       string `json:"debt_id"`
+			SourceCommit string `json:"source_commit"`
+			SourcePath   string `json:"source_path"`
+			SourceLines  string `json:"source_lines"`
+			MatchLines   string `json:"match_lines"`
+		} `json:"items"`
+	}
+	b, err := os.ReadFile("../evidence/cobaltstrike-debt-register.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &debt); err != nil {
+		t.Fatal(err)
+	}
+	var cross struct {
+		Predicates []struct {
+			ID          string `json:"id"`
+			DebtID      string `json:"debt_id"`
+			SourcePath  string `json:"source_path"`
+			SourceLines string `json:"source_lines"`
+			MatchLines  string `json:"match_lines"`
+		} `json:"ordered_predicates"`
+	}
+	b, err = os.ReadFile("../evidence/cobaltstrike-predicate-source-map.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &cross); err != nil {
+		t.Fatal(err)
+	}
+	if len(debt.Items) != 4 || len(cross.Predicates) != 4 {
+		t.Fatalf("expected four D-07 rows: debt=%d source=%d", len(debt.Items), len(cross.Predicates))
+	}
+	profiles, err := data.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var items []data.Item
+	for _, fw := range profiles.Frameworks {
+		if fw.ID == "cobaltstrike" {
+			items = fw.FieldGroups["http"].Items
+		}
+	}
+	if len(items) != 4 {
+		t.Fatalf("loaded cobalt items=%d", len(items))
+	}
+	for i := range debt.Items {
+		d, c := debt.Items[i], cross.Predicates[i]
+		if d.ID != c.ID || d.DebtID != c.DebtID || d.SourceCommit != "425897e8c36005e001e6f6254ede16117194f9d2" || d.SourcePath != c.SourcePath || d.SourceLines != c.SourceLines || d.MatchLines != c.MatchLines || items[i].ID != d.ID || items[i].DebtID != d.DebtID || items[i].Locator != "repo@"+d.SourceCommit+":"+d.SourcePath+":"+d.SourceLines {
+			t.Errorf("D-07 mapping %d not one-to-one", i)
+		}
+	}
+}
+
 func TestEmbeddedCovenantAssetAndFreshCopies(t *testing.T) {
 	first, err := data.Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.SchemaVersion != 1 || len(first.Frameworks) != 3 || first.Frameworks[0].ID != "covenant" || first.Frameworks[1].ID != "merlin" {
+	if first.SchemaVersion != 1 || len(first.Frameworks) != 4 || first.Frameworks[0].ID != "covenant" || first.Frameworks[1].ID != "merlin" || first.Frameworks[3].ID != "cobaltstrike" {
 		t.Fatalf("unexpected embedded profile document: %#v", first)
 	}
 	if len(first.Frameworks[0].FieldGroups["http"].Items) != 8 {
@@ -34,7 +111,7 @@ func TestEmbeddedCovenantAssetAndFreshCopies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(second.Frameworks) != 3 || len(second.Frameworks[0].FieldGroups["http"].Items) != 8 || len(second.Frameworks[1].FieldGroups["http"].Items) != 4 || len(second.Frameworks[2].FieldGroups["http"].Items) != 6 {
+	if len(second.Frameworks) != 4 || len(second.Frameworks[0].FieldGroups["http"].Items) != 8 || len(second.Frameworks[1].FieldGroups["http"].Items) != 4 || len(second.Frameworks[2].FieldGroups["http"].Items) != 6 || len(second.Frameworks[3].FieldGroups["http"].Items) != 4 {
 		t.Fatalf("caller mutation reached package asset: %#v", second)
 	}
 	third, err := data.Load()
@@ -344,7 +421,7 @@ func TestD07FixtureDoesNotMutateEmbeddedAsset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(embedded.Frameworks) != 3 || embedded.Frameworks[0].ID != "covenant" || embedded.Frameworks[0].FieldGroups["http"].Source.ID != "v11a-covenant-http-legacy-code" || embedded.Frameworks[1].ID != "merlin" || embedded.Frameworks[1].FieldGroups["http"].Source.ID != "v11a-merlin-http-legacy-code" || embedded.Frameworks[2].ID != "poshc2" || embedded.Frameworks[2].FieldGroups["http"].Source.ID != "v11a-poshc2-http-legacy-code" {
+	if len(embedded.Frameworks) != 4 || embedded.Frameworks[0].ID != "covenant" || embedded.Frameworks[0].FieldGroups["http"].Source.ID != "v11a-covenant-http-legacy-code" || embedded.Frameworks[1].ID != "merlin" || embedded.Frameworks[1].FieldGroups["http"].Source.ID != "v11a-merlin-http-legacy-code" || embedded.Frameworks[2].ID != "poshc2" || embedded.Frameworks[2].FieldGroups["http"].Source.ID != "v11a-poshc2-http-legacy-code" || embedded.Frameworks[3].ID != "cobaltstrike" {
 		t.Fatal("test fixture affected production embedded asset")
 	}
 }
