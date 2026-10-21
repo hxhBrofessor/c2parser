@@ -47,7 +47,7 @@ type Framework struct {
 // FieldGroup records evidence and pending-verification status for one group.
 type FieldGroup struct {
 	Evidence Evidence `yaml:"evidence"`
-	// Verify=true means pending verification and not eligible for scoring.
+	// Verify=true means declared-but-unpopulated and not eligible for scoring; items must be empty.
 	// Verify=false means potentially consumable, not externally verified.
 	Verify bool    `yaml:"verify"`
 	Source *Source `yaml:"source"`
@@ -190,9 +190,6 @@ func ParseProfiles(src []byte) (Profiles, error) {
 				return zero, fmt.Errorf("%s.items: required sequence", groupPath)
 			}
 			items := append([]Item(nil), (*g.Items)...)
-			if len(items) > 0 && (group != "http" || (*fw.ID != "covenant" && *fw.ID != "merlin" && *fw.ID != "poshc2" && *fw.ID != "cobaltstrike")) {
-				return zero, fmt.Errorf("%s.items: nonempty items are supported only for registered HTTP slices", groupPath)
-			}
 			if g.Reason != nil && strings.TrimSpace(*g.Reason) == "" {
 				return zero, fmt.Errorf("%s.reason: must be nonempty when present", groupPath)
 			}
@@ -206,6 +203,12 @@ func ParseProfiles(src []byte) (Profiles, error) {
 			}
 			if err := validateGroup(groupPath, value); err != nil {
 				return zero, err
+			}
+			if value.Verify && len(value.Items) != 0 {
+				return zero, fmt.Errorf("%s.items: PENDING_GROUP_ITEMS_NOT_EMPTY: verify:true requires exactly items: []", groupPath)
+			}
+			if len(items) > 0 && (group != "http" || (*fw.ID != "covenant" && *fw.ID != "merlin" && *fw.ID != "poshc2" && *fw.ID != "cobaltstrike")) {
+				return zero, fmt.Errorf("%s.items: nonempty items are supported only for registered HTTP slices", groupPath)
 			}
 			if err := validateItems(groupPath, *fw.ID, group, value.Items); err != nil {
 				return zero, err

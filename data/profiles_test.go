@@ -238,6 +238,12 @@ func TestValidFixtureAndGroupSemantics(t *testing.T) {
 	if p.Frameworks[0].FieldGroups["cert"].Source != nil || p.Frameworks[0].FieldGroups["dns"].Source != nil {
 		t.Fatal("null-source fixture groups should remain source-null")
 	}
+	for _, group := range []string{"cert", "dns"} {
+		g := p.Frameworks[0].FieldGroups[group]
+		if !g.Verify || len(g.Items) != 0 || strings.TrimSpace(g.Reason) == "" {
+			t.Fatalf("pending %s should remain declared-but-empty: %#v", group, g)
+		}
+	}
 	if p.Frameworks[0].Aliases[0] != "sample" {
 		t.Fatal("alias not parsed")
 	}
@@ -269,6 +275,78 @@ frameworks:
 `)
 	if _, err := data.ParseProfiles(input); err != nil {
 		t.Fatalf("valid status-source records rejected: %v", err)
+	}
+}
+
+func TestActiveHTTPItemsRemainAccepted(t *testing.T) {
+	base := string(readFixture(t, "valid-profile.yaml"))
+	base = strings.Replace(base, "id: sample_framework", "id: covenant", 1)
+	base = strings.Replace(base, "        verify: true", "        verify: false", 1)
+	base = strings.Replace(base, "        items: []", `        items:
+          - id: active-http-fixture
+            debt_id: ACTIVE-TEST-001
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:103-104
+            kind: uri_exact
+            message: request
+            value: /active
+            feature: active fixture URI
+            weight: 0.25`, 1)
+	p, err := data.ParseProfiles([]byte(base))
+	if err != nil {
+		t.Fatalf("verify:false HTTP item rejected: %v", err)
+	}
+	g := p.Frameworks[0].FieldGroups["http"]
+	if g.Verify || len(g.Items) != 1 || g.Items[0].Value != "/active" {
+		t.Fatalf("active HTTP fixture mismatch: %#v", g)
+	}
+}
+
+func TestPendingGroupsRequireExactlyEmptyItems(t *testing.T) {
+	const item = `
+          - id: pending-fixture-item
+            debt_id: PENDING-TEST-001
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/httpdefaults.go:103-104
+            kind: uri_exact
+            message: request
+            value: /fixture
+            feature: fixture URI
+            weight: 0.25`
+	for _, group := range []string{"http", "cert", "dns", "blob", "transport", "version_map"} {
+		t.Run(group, func(t *testing.T) {
+			input := []byte(`schema_version: 1
+frameworks:
+  - id: pending_fixture
+    field_groups:
+      ` + group + `:
+        evidence: UNKNOWN
+        verify: true
+        source: null
+        reason: Pending status recorded for a parser test.
+        items: []
+`)
+			if _, err := data.ParseProfiles(input); err != nil {
+				t.Fatalf("declared empty pending group rejected: %v", err)
+			}
+			input = []byte(strings.Replace(string(input), "        items: []", "        items:"+item, 1))
+			if _, err := data.ParseProfiles(input); err == nil || !strings.Contains(err.Error(), "PENDING_GROUP_ITEMS_NOT_EMPTY") {
+				t.Fatalf("pending items did not fail at the pending contract: %v", err)
+			}
+		})
+	}
+}
+
+func TestPendingItemsSequenceShapeRemainsRequired(t *testing.T) {
+	base := string(readFixture(t, "valid-profile.yaml"))
+	for _, tc := range []struct{ name, replacement string }{
+		{"null", "items: null"},
+		{"mapping", "items: {}"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := strings.Replace(base, "items: []", tc.replacement, 1)
+			if _, err := data.ParseProfiles([]byte(input)); err == nil || !strings.Contains(strings.ToLower(err.Error()), "items") {
+				t.Fatalf("malformed pending item sequence accepted: %v", err)
+			}
+		})
 	}
 }
 

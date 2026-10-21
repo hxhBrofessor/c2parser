@@ -107,9 +107,31 @@ func covenantHTTPItems(p data.Profiles) ([]data.Item, error) {
 	return append([]data.Item(nil), profiles["covenant/http"]...), nil
 }
 
+var productionObjectID = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
+
+// validateProductionProfileBoundary adds registry-only constraints without
+// narrowing data.ParseProfiles fixture semantics. The production registry is
+// closed to empty field-group maps and mutable source revisions.
+func validateProductionProfileBoundary(p data.Profiles) error {
+	for _, fw := range p.Frameworks {
+		if len(fw.FieldGroups) == 0 {
+			return fmt.Errorf("PRODUCTION_EMPTY_FIELD_GROUPS: %s", fw.ID)
+		}
+		for name, group := range fw.FieldGroups {
+			if group.Source != nil && !productionObjectID.MatchString(group.Source.Revision) {
+				return fmt.Errorf("PRODUCTION_SOURCE_REVISION_NOT_IMMUTABLE: %s/%s", fw.ID, name)
+			}
+		}
+	}
+	return nil
+}
+
 // registeredFrameworkHTTPItems is closed to reviewed framework/group identities.
 // YAML holds predicate values; independent frozen tables are the exact-value oracle.
 func registeredFrameworkHTTPItems(p data.Profiles) (map[string][]data.Item, error) {
+	if err := validateProductionProfileBoundary(p); err != nil {
+		return nil, err
+	}
 	if p.SchemaVersion != 1 || len(p.Frameworks) != 4 {
 		return nil, fmt.Errorf("UNAUTHORIZED_PROFILE_GROUP: expected exactly four registered HTTP groups")
 	}
