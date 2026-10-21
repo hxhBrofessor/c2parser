@@ -109,11 +109,8 @@ func TestKnownC2Certs(t *testing.T) {
 			t.Errorf("%s: got (%q, %v), want reason containing %q", c.name, why, ok, c.want)
 		}
 	}
-	// Exact-hash path: a cert whose SHA-256 is in the table.
-	ci, _, _, _ := mkCert(t, certSpec{serial: 1, subject: pkix.Name{CommonName: "h"}})
-	knownCertSHA256[ci.SHA256] = "test hash entry"
-	defer delete(knownCertSHA256, ci.SHA256)
-	if why, ok := knownC2Cert(ci); !ok || why != "test hash entry" {
+	// Exact-hash path: the pinned fingerprint is folded before lookup.
+	if why, ok := knownC2Cert(&certInfo{SHA256: "87F2085C32B6A2CC709B365F55873E207A9CAA10BFFECF2FD16D3CF9D94D390C"}); !ok || why != "Cobalt Strike default team-server certificate" {
 		t.Errorf("SHA-256 lookup failed: %q %v", why, ok)
 	}
 }
@@ -195,6 +192,23 @@ func TestPoshC2CertOverTLS12(t *testing.T) {
 	f := findBy(res, CatC2, "203.0.113.80")
 	if f == nil || !hasSignal(f, "c2_default_certificate") {
 		t.Fatalf("PoshC2 default cert not flagged: %+v", f)
+	}
+	var defaultCertSeen, anomalySeen, selfSignedSeen bool
+	for _, sig := range f.Signals {
+		switch sig.Name {
+		case "c2_default_certificate":
+			defaultCertSeen = true
+			if sig.Weight != 0.95 || sig.Score != 1 || !strings.Contains(sig.Detail, "PoshC2 default certificate (CN=P18055077, O=Pajfds)") || !strings.Contains(sig.Detail, `subject "`) || !strings.Contains(sig.Detail, "serial 1000") {
+				t.Fatalf("default certificate signal changed: %+v", sig)
+			}
+		case "cert_generator_validity":
+			anomalySeen = true
+		case "self_signed_certificate":
+			selfSignedSeen = true
+		}
+	}
+	if !defaultCertSeen || !anomalySeen || !selfSignedSeen {
+		t.Fatalf("expected default, anomaly and self-signed certificate signals: %+v", f.Signals)
 	}
 	if !hasSignal(f, "cert_generator_validity") {
 		t.Errorf("3650-day self-signed span not flagged: %+v", f.Signals)

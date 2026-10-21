@@ -1,0 +1,19 @@
+{
+  "source_commit": "425897e8c36005e001e6f6254ede16117194f9d2",
+  "claim": "Pinned v11a certificate identity code carry-forward only; external attribution is not independently corroborated.",
+  "external_provenance": "PENDING",
+  "items": [
+    {"id":"cobaltstrike-cert-der-sha256-default","debt_id":"B33-D07-CS-CERT-001","framework":"cobaltstrike","field_group":"cert","source_commit":"425897e8c36005e001e6f6254ede16117194f9d2","source_path":"internal/engine/certdefaults.go","source_lines":"28-33","legacy_reason":"Cobalt Strike default team-server certificate","provenance":"pinned-code carry-forward only; external provenance pending"},
+    {"id":"cobaltstrike-cert-der-sha256-second","debt_id":"B33-D07-CS-CERT-002","framework":"cobaltstrike","field_group":"cert","source_commit":"425897e8c36005e001e6f6254ede16117194f9d2","source_path":"internal/engine/certdefaults.go","source_lines":"28-33","legacy_reason":"Cobalt Strike second widely-seen default certificate","provenance":"pinned-code carry-forward only; external provenance pending"},
+    {"id":"cobaltstrike-cert-serial-default","debt_id":"B33-D07-CS-CERT-003","framework":"cobaltstrike","field_group":"cert","source_commit":"425897e8c36005e001e6f6254ede16117194f9d2","source_path":"internal/engine/certdefaults.go","source_lines":"35-40","legacy_reason":"Cobalt Strike default team-server certificate (serial 0x8BB00EE)","provenance":"pinned-code carry-forward only; external provenance pending"},
+    {"id":"cobaltstrike-cert-dn-default","debt_id":"B33-D07-CS-CERT-004","framework":"cobaltstrike","field_group":"cert","source_commit":"425897e8c36005e001e6f6254ede16117194f9d2","source_path":"internal/engine/certdefaults.go","source_lines":"60-62","legacy_reason":"Cobalt Strike default certificate DN","provenance":"pinned-code carry-forward only; external provenance pending"},
+    {"id":"bruteratel-cert-der-sha256-default","debt_id":"B33-D07-BRC4-CERT-001","framework":"bruteratel","field_group":"cert","source_commit":"425897e8c36005e001e6f6254ede16117194f9d2","source_path":"internal/engine/certdefaults.go","source_lines":"28-33","legacy_reason":"Brute Ratel C4 certificate (Unit 42 2022 cluster)","provenance":"pinned-code carry-forward only; external provenance pending"},
+    {"id":"bruteratel-cert-serial-default","debt_id":"B33-D07-BRC4-CERT-002","framework":"bruteratel","field_group":"cert","source_commit":"425897e8c36005e001e6f6254ede16117194f9d2","source_path":"internal/engine/certdefaults.go","source_lines":"35-40","legacy_reason":"Brute Ratel C4 certificate (Unit 42 2022 cluster)","provenance":"pinned-code carry-forward only; external provenance pending"}
+  ],
+  "go_retained": [
+    {"branch":"poshc2","source_path":"internal/engine/certdefaults.go","source_lines":"68-72","status":"GO_RETAINED"},
+    {"branch":"covenant","source_path":"internal/engine/certdefaults.go","source_lines":"73-74","status":"GO_RETAINED"},
+    {"branch":"bruteratel_c4","source_path":"internal/engine/certdefaults.go","source_lines":"75-76","status":"GO_RETAINED"},
+    {"branch":"sliver","source_path":"internal/engine/certdefaults.go","source_lines":"77-78","status":"GO_RETAINED"}
+  ]
+}

@@ -100,7 +100,7 @@ func TestEmbeddedCovenantAssetAndFreshCopies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first.SchemaVersion != 1 || len(first.Frameworks) != 4 || first.Frameworks[0].ID != "covenant" || first.Frameworks[1].ID != "merlin" || first.Frameworks[3].ID != "cobaltstrike" {
+	if first.SchemaVersion != 1 || len(first.Frameworks) != 5 || first.Frameworks[0].ID != "covenant" || first.Frameworks[1].ID != "merlin" || first.Frameworks[3].ID != "cobaltstrike" || first.Frameworks[4].ID != "bruteratel" {
 		t.Fatalf("unexpected embedded profile document: %#v", first)
 	}
 	if len(first.Frameworks[0].FieldGroups["http"].Items) != 8 {
@@ -111,7 +111,7 @@ func TestEmbeddedCovenantAssetAndFreshCopies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(second.Frameworks) != 4 || len(second.Frameworks[0].FieldGroups["http"].Items) != 8 || len(second.Frameworks[1].FieldGroups["http"].Items) != 4 || len(second.Frameworks[2].FieldGroups["http"].Items) != 6 || len(second.Frameworks[3].FieldGroups["http"].Items) != 4 {
+	if len(second.Frameworks) != 5 || len(second.Frameworks[0].FieldGroups["http"].Items) != 8 || len(second.Frameworks[1].FieldGroups["http"].Items) != 4 || len(second.Frameworks[2].FieldGroups["http"].Items) != 6 || len(second.Frameworks[3].FieldGroups["http"].Items) != 4 || len(second.Frameworks[4].FieldGroups["cert"].Items) != 2 {
 		t.Fatalf("caller mutation reached package asset: %#v", second)
 	}
 	third, err := data.Load()
@@ -499,7 +499,7 @@ func TestD07FixtureDoesNotMutateEmbeddedAsset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(embedded.Frameworks) != 4 || embedded.Frameworks[0].ID != "covenant" || embedded.Frameworks[0].FieldGroups["http"].Source.ID != "v11a-covenant-http-legacy-code" || embedded.Frameworks[1].ID != "merlin" || embedded.Frameworks[1].FieldGroups["http"].Source.ID != "v11a-merlin-http-legacy-code" || embedded.Frameworks[2].ID != "poshc2" || embedded.Frameworks[2].FieldGroups["http"].Source.ID != "v11a-poshc2-http-legacy-code" || embedded.Frameworks[3].ID != "cobaltstrike" {
+	if len(embedded.Frameworks) != 5 || embedded.Frameworks[0].ID != "covenant" || embedded.Frameworks[0].FieldGroups["http"].Source.ID != "v11a-covenant-http-legacy-code" || embedded.Frameworks[1].ID != "merlin" || embedded.Frameworks[1].FieldGroups["http"].Source.ID != "v11a-merlin-http-legacy-code" || embedded.Frameworks[2].ID != "poshc2" || embedded.Frameworks[2].FieldGroups["http"].Source.ID != "v11a-poshc2-http-legacy-code" || embedded.Frameworks[3].ID != "cobaltstrike" || embedded.Frameworks[4].ID != "bruteratel" {
 		t.Fatal("test fixture affected production embedded asset")
 	}
 }

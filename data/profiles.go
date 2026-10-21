@@ -18,6 +18,8 @@ var (
 	revisionPattern    = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64}|v?[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?)$`)
 	locatorLinePattern = regexp.MustCompile(`^[1-9][0-9]*(?:-[1-9][0-9]*)?$`)
 	locatorSymbol      = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	certSHA256Pattern  = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	certSerialPattern  = regexp.MustCompile(`^[1-9][0-9]*$`)
 )
 
 // Evidence identifies the basis for a field group's metadata.
@@ -56,8 +58,8 @@ type FieldGroup struct {
 }
 
 // Item is a deliberately small matcher vocabulary for registered fingerprints.
-// It is not an expression language; each kind has a fixed, typed shape. The four
-// Cobalt-only fields are accepted only by their registered Cobalt HTTP kinds.
+// It is not an expression language; each kind has a fixed, typed shape. The
+// Cobalt-only HTTP fields and certificate identity fields are closed by kind.
 type Item struct {
 	ID             string   `yaml:"id"`
 	DebtID         string   `yaml:"debt_id"`
@@ -110,7 +112,7 @@ func Load() (Profiles, error) { return ParseProfiles(frameworkFingerprintsYAML) 
 
 // ParseProfiles parses one strict profile document and returns a fresh,
 // validated value. It rejects aliases, anchors, custom tags, duplicate and
-// unknown keys, and matcher items outside the bounded Covenant HTTP grammar.
+// unknown keys, and matcher items outside the bounded registered grammars.
 func ParseProfiles(src []byte) (Profiles, error) {
 	var zero Profiles
 	file, err := parser.ParseBytes(src, 0)
@@ -207,8 +209,8 @@ func ParseProfiles(src []byte) (Profiles, error) {
 			if value.Verify && len(value.Items) != 0 {
 				return zero, fmt.Errorf("%s.items: PENDING_GROUP_ITEMS_NOT_EMPTY: verify:true requires exactly items: []", groupPath)
 			}
-			if len(items) > 0 && (group != "http" || (*fw.ID != "covenant" && *fw.ID != "merlin" && *fw.ID != "poshc2" && *fw.ID != "cobaltstrike")) {
-				return zero, fmt.Errorf("%s.items: nonempty items are supported only for registered HTTP slices", groupPath)
+			if len(items) > 0 && ((group == "http" && (*fw.ID != "covenant" && *fw.ID != "merlin" && *fw.ID != "poshc2" && *fw.ID != "cobaltstrike")) || (group == "cert" && *fw.ID != "cobaltstrike" && *fw.ID != "bruteratel") || (group != "http" && group != "cert")) {
+				return zero, fmt.Errorf("%s.items: nonempty items are supported only for registered HTTP and certificate slices", groupPath)
 			}
 			if err := validateItems(groupPath, *fw.ID, group, value.Items); err != nil {
 				return zero, err
@@ -305,18 +307,13 @@ func requireKeys(root ast.Node) error {
 			if !ok {
 				return fmt.Errorf("frameworks[%d].field_groups.%s.items: expected sequence", i, name)
 			}
+			if verify, ok := mapValue(g, "verify").(*ast.BoolNode); ok && verify.GetValue().(bool) && len(items.Values) != 0 {
+				return fmt.Errorf("frameworks[%d].field_groups.%s.items: PENDING_GROUP_ITEMS_NOT_EMPTY: verify:true requires exactly items: []", i, name)
+			}
 			for j, item := range items.Values {
 				im, ok := item.(*ast.MappingNode)
 				if !ok {
 					return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d]: expected mapping", i, name, j)
-				}
-				if err := hasKeys(im, "id", "debt_id", "code_locator", "kind", "feature", "weight"); err != nil {
-					return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d]: %w", i, name, j, err)
-				}
-				for _, key := range []string{"id", "debt_id", "code_locator", "kind", "feature"} {
-					if _, ok := mapValue(im, key).(*ast.StringNode); !ok {
-						return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d].%s: expected string scalar", i, name, j, key)
-					}
 				}
 				kindNode, ok := mapValue(im, "kind").(*ast.StringNode)
 				if !ok {
@@ -324,6 +321,11 @@ func requireKeys(root ast.Node) error {
 				}
 				if err := validateItemKeys(im, fwID, name, kindNode.GetValue().(string)); err != nil {
 					return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d]: %w", i, name, j, err)
+				}
+				for _, key := range []string{"id", "debt_id", "code_locator", "kind", "feature"} {
+					if _, ok := mapValue(im, key).(*ast.StringNode); !ok {
+						return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d].%s: expected string scalar", i, name, j, key)
+					}
 				}
 				for _, key := range []string{"message", "method", "header", "value", "path", "reason"} {
 					if node := mapValue(im, key); node != nil {
@@ -364,9 +366,11 @@ func requireKeys(root ast.Node) error {
 						return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d].status: expected integer scalar", i, name, j)
 					}
 				}
-				if _, ok := mapValue(im, "weight").(*ast.FloatNode); !ok {
-					if _, intOK := mapValue(im, "weight").(*ast.IntegerNode); !intOK {
-						return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d].weight: expected numeric scalar", i, name, j)
+				if weight := mapValue(im, "weight"); weight != nil {
+					if _, ok := weight.(*ast.FloatNode); !ok {
+						if _, intOK := weight.(*ast.IntegerNode); !intOK {
+							return fmt.Errorf("frameworks[%d].field_groups.%s.items[%d].weight: expected numeric scalar", i, name, j)
+						}
 					}
 				}
 			}
@@ -390,9 +394,12 @@ func requireKeys(root ast.Node) error {
 }
 
 func validateItems(path, frameworkID, group string, items []Item) error {
-	if frameworkID == "cobaltstrike" {
-		if group != "http" || len(items) != 4 {
-			return fmt.Errorf("%s: Cobalt Strike supports exactly four registered HTTP items", path)
+	if frameworkID == "cobaltstrike" && group == "http" && len(items) != 4 {
+		return fmt.Errorf("%s: Cobalt Strike supports exactly four registered HTTP items", path)
+	}
+	if group == "cert" {
+		if len(items) > 0 && frameworkID != "cobaltstrike" && frameworkID != "bruteratel" {
+			return fmt.Errorf("%s: certificate identity kinds are not registered for %s", path, frameworkID)
 		}
 	} else if len(items) > 0 && group != "http" {
 		return fmt.Errorf("%s: non-HTTP matcher items are not supported", path)
@@ -403,10 +410,15 @@ func validateItems(path, frameworkID, group string, items []Item) error {
 		if item.ID == "" || item.DebtID == "" || item.Locator == "" || item.Feature == "" || strings.TrimSpace(item.Feature) != item.Feature {
 			return fmt.Errorf("%s: id, debt_id, code_locator and feature are required and trimmed", p)
 		}
-		if !strings.HasPrefix(item.Locator, "repo@"+v11aSourceCommit+":internal/engine/httpdefaults.go:") {
-			return fmt.Errorf("%s.code_locator: must point into the pinned v11a HTTP implementation", p)
+		legacyPath := "internal/engine/httpdefaults.go:"
+		if group == "cert" {
+			legacyPath = "internal/engine/certdefaults.go:"
 		}
-		loc := strings.TrimPrefix(item.Locator, "repo@"+v11aSourceCommit+":internal/engine/httpdefaults.go:")
+		locatorPrefix := "repo@" + v11aSourceCommit + ":" + legacyPath
+		if !strings.HasPrefix(item.Locator, locatorPrefix) {
+			return fmt.Errorf("%s.code_locator: must point into the pinned v11a %s implementation", p, group)
+		}
+		loc := strings.TrimPrefix(item.Locator, locatorPrefix)
 		if !locatorLinePattern.MatchString(loc) {
 			return fmt.Errorf("%s.code_locator: expected bounded source line range", p)
 		}
@@ -419,6 +431,35 @@ func validateItems(path, frameworkID, group string, items []Item) error {
 		}
 		if item.Reason != "" && (strings.TrimSpace(item.Reason) == "" || item.Reason != strings.TrimSpace(item.Reason)) {
 			return fmt.Errorf("%s.reason: must be nonempty and trimmed when present", p)
+		}
+		if group == "cert" {
+			if item.Message != "" || item.Method != "" || item.Header != "" || item.Path != "" || item.ElevatedWeight != 0 || len(item.Checksums) != 0 || item.Status != 0 || item.Weight != 0 || strings.TrimSpace(item.Reason) == "" || item.Reason != strings.TrimSpace(item.Reason) {
+				return fmt.Errorf("%s: certificate item contains forbidden HTTP/scoring fields or missing reason", p)
+			}
+			switch item.Kind {
+			case "cert_der_sha256_exact":
+				if (frameworkID != "cobaltstrike" && frameworkID != "bruteratel") || item.Value == "" || !certSHA256Pattern.MatchString(item.Value) || len(item.Values) != 0 {
+					return fmt.Errorf("%s: malformed certificate DER SHA-256 item", p)
+				}
+			case "cert_serial_decimal_exact":
+				if (frameworkID != "cobaltstrike" && frameworkID != "bruteratel") || !certSerialPattern.MatchString(item.Value) || len(item.Values) != 0 {
+					return fmt.Errorf("%s: malformed certificate decimal serial item", p)
+				}
+			case "cert_dn_contains_folded":
+				if frameworkID != "cobaltstrike" || item.Value != "" || len(item.Values) != 3 {
+					return fmt.Errorf("%s: malformed certificate folded-DN item", p)
+				}
+				seenValues := map[string]bool{}
+				for _, value := range item.Values {
+					if value == "" || value != strings.ToLower(value) || strings.TrimSpace(value) != value || seenValues[value] {
+						return fmt.Errorf("%s.values: certificate DN literals must be unique lowercase nonempty strings", p)
+					}
+					seenValues[value] = true
+				}
+			default:
+				return fmt.Errorf("%s.kind: unsupported certificate matcher kind %q", p, item.Kind)
+			}
+			continue
 		}
 		switch item.Kind {
 		case "uri_exact":
@@ -517,7 +558,41 @@ func validateItems(path, frameworkID, group string, items []Item) error {
 }
 
 func validateItemKeys(node *ast.MappingNode, frameworkID, group, kind string) error {
-	allowed := map[string]bool{"id": true, "debt_id": true, "code_locator": true, "kind": true, "feature": true, "weight": true, "message": true, "method": true, "header": true, "value": true, "values": true, "reason": true}
+	allowedHTTP := map[string]bool{"id": true, "debt_id": true, "code_locator": true, "kind": true, "feature": true, "weight": true, "message": true, "method": true, "header": true, "value": true, "values": true, "reason": true, "path": true, "elevated_weight": true, "checksums": true, "status": true}
+	if group == "cert" {
+		sets := map[string][]string{
+			"cert_der_sha256_exact":     {"id", "debt_id", "code_locator", "kind", "value", "feature", "reason"},
+			"cert_serial_decimal_exact": {"id", "debt_id", "code_locator", "kind", "value", "feature", "reason"},
+			"cert_dn_contains_folded":   {"id", "debt_id", "code_locator", "kind", "values", "feature", "reason"},
+		}
+		required, ok := sets[kind]
+		if !ok || (frameworkID != "cobaltstrike" && frameworkID != "bruteratel") || (frameworkID == "bruteratel" && kind == "cert_dn_contains_folded") {
+			return fmt.Errorf("unsupported certificate matcher kind or framework")
+		}
+		expected := map[string]bool{}
+		for _, key := range required {
+			expected[key] = true
+		}
+		for _, entry := range node.Values {
+			key, ok := entry.Key.(ast.ScalarNode)
+			if !ok {
+				return fmt.Errorf("item keys must be strings")
+			}
+			name, ok := key.GetValue().(string)
+			if !ok || !expected[name] {
+				return fmt.Errorf("certificate item has forbidden or unknown field")
+			}
+		}
+		for _, key := range required {
+			if mapValue(node, key) == nil {
+				return fmt.Errorf("%s: required field %q missing", kind, key)
+			}
+		}
+		return nil
+	}
+	if group != "http" {
+		return fmt.Errorf("matcher items are only supported in registered HTTP or certificate groups")
+	}
 	if frameworkID != "cobaltstrike" {
 		for _, key := range []string{"path", "elevated_weight", "checksums", "status"} {
 			if mapValue(node, key) != nil {
@@ -533,13 +608,12 @@ func validateItemKeys(node *ast.MappingNode, frameworkID, group, kind string) er
 		"response_empty_404":         {"id", "debt_id", "code_locator", "kind", "message", "header", "value", "status", "feature", "weight", "reason"},
 	}
 	required, ok := sets[kind]
-	if !ok || group != "http" {
+	if !ok {
 		return fmt.Errorf("unsupported Cobalt matcher kind or group")
 	}
 	expected := map[string]bool{}
 	for _, key := range required {
 		expected[key] = true
-		allowed[key] = true
 	}
 	for _, entry := range node.Values {
 		key, ok := entry.Key.(ast.ScalarNode)
@@ -547,7 +621,7 @@ func validateItemKeys(node *ast.MappingNode, frameworkID, group, kind string) er
 			return fmt.Errorf("item keys must be strings")
 		}
 		name, ok := key.GetValue().(string)
-		if !ok || !allowed[name] {
+		if !ok || !allowedHTTP[name] {
 			return fmt.Errorf("unknown item field")
 		}
 		if !expected[name] {

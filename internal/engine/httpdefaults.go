@@ -2,6 +2,9 @@ package engine
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math"
 	"regexp"
@@ -96,7 +99,14 @@ func loadFrameworkHTTPProfiles() (map[string][]data.Item, error) {
 	if err != nil {
 		return nil, err
 	}
-	return registeredFrameworkHTTPItems(p)
+	profiles, err := registeredFrameworkHTTPItems(p)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := loadCertificateIdentityLookup(p); err != nil {
+		return nil, err
+	}
+	return profiles, nil
 }
 
 func covenantHTTPItems(p data.Profiles) ([]data.Item, error) {
@@ -132,8 +142,8 @@ func registeredFrameworkHTTPItems(p data.Profiles) (map[string][]data.Item, erro
 	if err := validateProductionProfileBoundary(p); err != nil {
 		return nil, err
 	}
-	if p.SchemaVersion != 1 || len(p.Frameworks) != 4 {
-		return nil, fmt.Errorf("UNAUTHORIZED_PROFILE_GROUP: expected exactly four registered HTTP groups")
+	if p.SchemaVersion != 1 || len(p.Frameworks) != 5 {
+		return nil, fmt.Errorf("UNAUTHORIZED_PROFILE_GROUP: expected four HTTP frameworks and one certificate-only framework")
 	}
 	type spec struct {
 		id, sourceID, citation, reason, sourceLoc, prefix string
@@ -148,9 +158,13 @@ func registeredFrameworkHTTPItems(p data.Profiles) (map[string][]data.Item, erro
 	}
 	out := make(map[string][]data.Item, 4)
 	seenID, seenDebt := map[string]bool{}, map[string]bool{}
-	for fi, fw := range p.Frameworks {
+	for fi, fw := range p.Frameworks[:4] {
 		sp := specs[fi]
-		if fw.ID != sp.id || len(fw.Aliases) != 0 || len(fw.FieldGroups) != 1 {
+		wantGroups := 1
+		if fw.ID == "cobaltstrike" {
+			wantGroups = 2
+		}
+		if fw.ID != sp.id || len(fw.Aliases) != 0 || len(fw.FieldGroups) != wantGroups {
 			return nil, fmt.Errorf("UNAUTHORIZED_PROFILE_GROUP: registry order/shape mismatch")
 		}
 		g, ok := fw.FieldGroups["http"]
@@ -175,7 +189,86 @@ func registeredFrameworkHTTPItems(p data.Profiles) (map[string][]data.Item, erro
 		}
 		out[fw.ID+"/http"] = append([]data.Item(nil), g.Items...)
 	}
+	if p.Frameworks[4].ID != "bruteratel" || len(p.Frameworks[4].Aliases) != 0 || len(p.Frameworks[4].FieldGroups) != 1 {
+		return nil, fmt.Errorf("UNAUTHORIZED_PROFILE_GROUP: registry order/shape mismatch")
+	}
+	if _, err := registeredFrameworkCertItems(p); err != nil {
+		return nil, err
+	}
 	return out, nil
+}
+
+// registeredFrameworkCertItems validates the fixed six-item certificate slice.
+// The YAML supplies values; this registry binds IDs, debts, source locations,
+// reasons and order so an edited embedded asset fails closed.
+func registeredFrameworkCertItems(p data.Profiles) (map[string][]data.Item, error) {
+	if err := validateProductionProfileBoundary(p); err != nil {
+		return nil, err
+	}
+	if p.SchemaVersion != 1 || len(p.Frameworks) != 5 {
+		return nil, fmt.Errorf("UNAUTHORIZED_CERT_PROFILE: expected five-framework registry")
+	}
+	ids := []string{"cobaltstrike", "bruteratel"}
+	counts := []int{4, 2}
+	itemIDs := [][]string{
+		{"cobaltstrike-cert-der-sha256-default", "cobaltstrike-cert-der-sha256-second", "cobaltstrike-cert-serial-default", "cobaltstrike-cert-dn-default"},
+		{"bruteratel-cert-der-sha256-default", "bruteratel-cert-serial-default"},
+	}
+	debts := [][]string{
+		{"B33-D07-CS-CERT-001", "B33-D07-CS-CERT-002", "B33-D07-CS-CERT-003", "B33-D07-CS-CERT-004"},
+		{"B33-D07-BRC4-CERT-001", "B33-D07-BRC4-CERT-002"},
+	}
+	kinds := [][]string{
+		{"cert_der_sha256_exact", "cert_der_sha256_exact", "cert_serial_decimal_exact", "cert_dn_contains_folded"},
+		{"cert_der_sha256_exact", "cert_serial_decimal_exact"},
+	}
+	locs := [][]string{{"28-33", "28-33", "35-40", "60-62"}, {"28-33", "35-40"}}
+	rev := "425897e8c36005e001e6f6254ede16117194f9d2"
+	out := map[string][]data.Item{}
+	seenDebt := map[string]bool{}
+	for fi, id := range ids {
+		fw := p.Frameworks[3+fi]
+		g, ok := fw.FieldGroups["cert"]
+		if fw.ID != id || len(fw.FieldGroups) != 2-fi || !ok || g.Evidence != data.EvidenceUnknown || g.Verify || g.Source == nil || len(g.Items) != counts[fi] {
+			return nil, fmt.Errorf("CERT_PROFILE_ITEM_SET_MISMATCH: %s status/count", id)
+		}
+		if g.Source.Revision != rev || g.Source.ID != "v11a-certificate-identities-legacy-code" || g.Source.Locator != "repo@"+rev+":internal/engine/certdefaults.go:knownC2Cert" || !strings.Contains(strings.ToLower(g.Reason), "external provenance pending") {
+			return nil, fmt.Errorf("CERT_PROFILE_SOURCE_MISMATCH: %s", id)
+		}
+		for i, it := range g.Items {
+			if it.ID != itemIDs[fi][i] || it.DebtID != debts[fi][i] || seenDebt[it.DebtID] || it.Kind != kinds[fi][i] || it.Locator != "repo@"+rev+":internal/engine/certdefaults.go:"+locs[fi][i] || it.Feature == "" || it.Reason == "" {
+				return nil, fmt.Errorf("CERT_PROFILE_ITEM_SET_MISMATCH: %s item %d", id, i)
+			}
+			seenDebt[it.DebtID] = true
+		}
+		out[id+"/cert"] = append([]data.Item(nil), g.Items...)
+	}
+	if digest, err := certificateRegistryDigest(out); err != nil || digest != certificateRegistryDigestSHA256 {
+		return nil, fmt.Errorf("CERT_PROFILE_VALUE_SET_MISMATCH: pinned six-item certificate table digest mismatch")
+	}
+	return out, nil
+}
+
+const certificateRegistryDigestSHA256 = "4a5a923401f673e3e922c91fdfbbaf857b9b44b10f9749f0df5c550779a1ed85"
+
+func certificateRegistryDigest(items map[string][]data.Item) (string, error) {
+	type binding struct {
+		ID, DebtID, Locator, Kind, Value string
+		Values                           []string
+		Feature, Reason                  string
+	}
+	var rows []binding
+	for _, framework := range []string{"cobaltstrike", "bruteratel"} {
+		for _, item := range items[framework+"/cert"] {
+			rows = append(rows, binding{item.ID, item.DebtID, item.Locator, item.Kind, item.Value, item.Values, item.Feature, item.Reason})
+		}
+	}
+	b, err := json.Marshal(rows)
+	if err != nil {
+		return "", err
+	}
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:]), nil
 }
 
 func (e *Engine) matchCovenantHTTP(ch *httpChannel, m *httpMsg, path string, frame int64) {

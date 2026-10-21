@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"c2parser/data"
 	"c2parser/internal/stats"
 )
 
@@ -89,6 +90,25 @@ func profileSignalFixture(reqs, resps []*httpMsg, want string) any {
 }
 
 func profileGoldenDocument() ([]byte, error) {
+	profiles, err := data.Load()
+	if err != nil {
+		return nil, err
+	}
+	certItems, err := registeredFrameworkCertItems(profiles)
+	if err != nil {
+		return nil, err
+	}
+	certSHA, certSerial := map[string]string{}, map[string]string{}
+	for _, framework := range []string{"cobaltstrike", "bruteratel"} {
+		for _, item := range certItems[framework+"/cert"] {
+			switch item.Kind {
+			case "cert_der_sha256_exact":
+				certSHA[item.Value] = item.Feature
+			case "cert_serial_decimal_exact":
+				certSerial[item.Value] = item.Feature
+			}
+		}
+	}
 	uriCases := []profileEntry{}
 	for _, path := range []string{"/WWWW", "/WWWX", "/beacon.php", "/index.html", "/not-a-shape", "/a.js"} {
 		uriCases = append(uriCases, profileEntry{path, uriShapeOf(path)})
@@ -149,7 +169,7 @@ func profileGoldenDocument() ([]byte, error) {
 		"uri_shape":        map[string]any{"uriShapeWeight": uriShapeWeight, "stagerMinBytes": stagerMinBytes, "wordDotMinFrac": wordDotMinFrac, "wordDotMaxURIs": wordDotMaxURIs, "uriShapeMinReqs": uriShapeMinReqs, "wordDotExtRe": wordDotExtRe.String(), "cases": uriCases},
 		"frame_magics_hex": magicHex,
 		"signatures":       sigRows,
-		"certificates":     map[string]any{"knownCertSHA256": sortedStringEntries(knownCertSHA256), "knownCertSerial": sortedStringEntries(knownCertSerial), "generatorSpans": sortedFloatEntries(generatorSpans)},
+		"certificates":     map[string]any{"knownCertSHA256": sortedStringEntries(certSHA), "knownCertSerial": sortedStringEntries(certSerial), "generatorSpans": sortedFloatEntries(generatorSpans)},
 		"csDNSPrefixSet":   sortedBoolEntries(csDNSPrefixSet),
 	}
 	b, err := json.MarshalIndent(doc, "", "  ")

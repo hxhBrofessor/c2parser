@@ -408,6 +408,8 @@ func TestTrackedEvidenceJSONAndPoshCobaltD07Crosswalk(t *testing.T) {
 	wantRequired := []string{
 		"evidence/cobaltstrike-debt-register.json",
 		"evidence/cobaltstrike-predicate-source-map.json",
+		"evidence/certificate-debt-register.json",
+		"evidence/certificate-predicate-source-map.json",
 		"evidence/poshc2-debt-register.json",
 		"evidence/poshc2-predicate-source-map.json",
 	}

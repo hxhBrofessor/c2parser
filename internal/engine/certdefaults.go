@@ -3,7 +3,10 @@ package engine
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
+
+	"c2parser/data"
 )
 
 // C2 certificate intelligence. Team servers generate their TLS certificates
@@ -25,18 +28,61 @@ type certHit struct {
 	detail string
 }
 
-// knownCertSHA256 maps lower-case SHA-256 fingerprints of the DER encoding.
-var knownCertSHA256 = map[string]string{
-	"87f2085c32b6a2cc709b365f55873e207a9caa10bffecf2fd16d3cf9d94d390c": "Cobalt Strike default team-server certificate",
-	"56a06a233bd30f693de25ef12cc19e8b2c92d3eb97dd969a2578df084c376478": "Cobalt Strike second widely-seen default certificate",
-	"d597d6572c5616573170275d0b5d5e3ab0c06d4a9104bbdbe952c4bcb52118c9": "Brute Ratel C4 certificate (Unit 42 2022 cluster)",
+type certificateIdentityLookup struct {
+	sha256 map[string]string
+	serial map[string]string
+	dn     []data.Item
 }
 
-// knownCertSerial maps decimal serial numbers. Serials alone collide easily
-// (small integers), so only long or well-documented ones go here.
-var knownCertSerial = map[string]string{
-	"146473198": "Cobalt Strike default team-server certificate (serial 0x8BB00EE)",
-	"476862511373535319627199034793753459614889484917": "Brute Ratel C4 certificate (Unit 42 2022 cluster)",
+var certificateIdentityOnce sync.Once
+var certificateIdentityTable certificateIdentityLookup
+var certificateIdentityErr error
+
+func buildCertificateIdentityLookup(p data.Profiles) (certificateIdentityLookup, error) {
+	items, err := registeredFrameworkCertItems(p)
+	if err != nil {
+		return certificateIdentityLookup{}, err
+	}
+	out := certificateIdentityLookup{sha256: map[string]string{}, serial: map[string]string{}}
+	for _, framework := range []string{"cobaltstrike", "bruteratel"} {
+		for _, item := range items[framework+"/cert"] {
+			switch item.Kind {
+			case "cert_der_sha256_exact":
+				if _, exists := out.sha256[item.Value]; exists {
+					return certificateIdentityLookup{}, fmt.Errorf("CERT_PROFILE_DUPLICATE_SHA256")
+				}
+				out.sha256[item.Value] = item.Feature
+			case "cert_serial_decimal_exact":
+				if _, exists := out.serial[item.Value]; exists {
+					return certificateIdentityLookup{}, fmt.Errorf("CERT_PROFILE_DUPLICATE_SERIAL")
+				}
+				out.serial[item.Value] = item.Feature
+			case "cert_dn_contains_folded":
+				out.dn = append(out.dn, item)
+			}
+		}
+	}
+	if len(out.sha256) != 3 || len(out.serial) != 2 || len(out.dn) != 1 {
+		return certificateIdentityLookup{}, fmt.Errorf("CERT_PROFILE_ITEM_SET_MISMATCH")
+	}
+	return out, nil
+}
+
+func loadCertificateIdentityLookup(p data.Profiles) (certificateIdentityLookup, error) {
+	certificateIdentityOnce.Do(func() { certificateIdentityTable, certificateIdentityErr = buildCertificateIdentityLookup(p) })
+	return certificateIdentityTable, certificateIdentityErr
+}
+
+func ensureCertificateIdentityLookup() (certificateIdentityLookup, error) {
+	certificateIdentityOnce.Do(func() {
+		p, err := data.Load()
+		if err != nil {
+			certificateIdentityErr = err
+			return
+		}
+		certificateIdentityTable, certificateIdentityErr = buildCertificateIdentityLookup(p)
+	})
+	return certificateIdentityTable, certificateIdentityErr
 }
 
 func firstOr(v []string) string {
@@ -51,15 +97,23 @@ func knownC2Cert(ci *certInfo) (string, bool) {
 	if ci == nil {
 		return "", false
 	}
-	if why, ok := knownCertSHA256[strings.ToLower(ci.SHA256)]; ok {
+	lookup, err := ensureCertificateIdentityLookup()
+	if err != nil {
+		return "", false
+	}
+	if why, ok := lookup.sha256[strings.ToLower(ci.SHA256)]; ok {
 		return why, true
 	}
-	if why, ok := knownCertSerial[ci.Serial]; ok {
+	if why, ok := lookup.serial[ci.Serial]; ok {
 		return why, true
 	}
 	dn := strings.ToLower(ci.Subject + " " + ci.Issuer)
-	if strings.Contains(dn, "major cobalt strike") || strings.Contains(dn, "o=cobaltstrike") || strings.Contains(dn, "advancedpentesting") {
-		return "Cobalt Strike default certificate DN", true
+	for _, item := range lookup.dn {
+		for _, value := range item.Values {
+			if strings.Contains(dn, value) {
+				return item.Feature, true
+			}
+		}
 	}
 	c := ci.cert
 	if c == nil {

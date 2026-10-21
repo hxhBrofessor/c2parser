@@ -262,3 +262,68 @@ frameworks:
             feature: empty text/plain 404
             weight: 0.20
             reason: Pinned v11a code carry-forward only; external provenance is pending.
+      cert:
+        evidence: UNKNOWN
+        verify: false
+        source:
+          id: v11a-certificate-identities-legacy-code
+          citation: Pinned v11a certificate identity lookup code; legacy-code provenance only, external corroboration pending.
+          revision: 425897e8c36005e001e6f6254ede16117194f9d2
+          locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/certdefaults.go:knownC2Cert
+        reason: External provenance pending; items preserve only pinned v11a certificate identity behavior.
+        items:
+          - id: cobaltstrike-cert-der-sha256-default
+            debt_id: B33-D07-CS-CERT-001
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/certdefaults.go:28-33
+            kind: cert_der_sha256_exact
+            value: 87f2085c32b6a2cc709b365f55873e207a9caa10bffecf2fd16d3cf9d94d390c
+            feature: Cobalt Strike default team-server certificate
+            reason: Pinned v11a code carry-forward only; external provenance is pending.
+          - id: cobaltstrike-cert-der-sha256-second
+            debt_id: B33-D07-CS-CERT-002
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/certdefaults.go:28-33
+            kind: cert_der_sha256_exact
+            value: 56a06a233bd30f693de25ef12cc19e8b2c92d3eb97dd969a2578df084c376478
+            feature: Cobalt Strike second widely-seen default certificate
+            reason: Pinned v11a code carry-forward only; external provenance is pending.
+          - id: cobaltstrike-cert-serial-default
+            debt_id: B33-D07-CS-CERT-003
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/certdefaults.go:35-40
+            kind: cert_serial_decimal_exact
+            value: "146473198"
+            feature: Cobalt Strike default team-server certificate (serial 0x8BB00EE)
+            reason: Pinned v11a code carry-forward only; external provenance is pending.
+          - id: cobaltstrike-cert-dn-default
+            debt_id: B33-D07-CS-CERT-004
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/certdefaults.go:60-62
+            kind: cert_dn_contains_folded
+            values: [major cobalt strike, o=cobaltstrike, advancedpentesting]
+            feature: Cobalt Strike default certificate DN
+            reason: Pinned v11a code carry-forward only; external provenance is pending.
+  - id: bruteratel
+    aliases: []
+    field_groups:
+      cert:
+        evidence: UNKNOWN
+        verify: false
+        source:
+          id: v11a-certificate-identities-legacy-code
+          citation: Pinned v11a certificate identity lookup code; legacy-code provenance only, external corroboration pending.
+          revision: 425897e8c36005e001e6f6254ede16117194f9d2
+          locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/certdefaults.go:knownC2Cert
+        reason: External provenance pending; items preserve only pinned v11a certificate identity behavior.
+        items:
+          - id: bruteratel-cert-der-sha256-default
+            debt_id: B33-D07-BRC4-CERT-001
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/certdefaults.go:28-33
+            kind: cert_der_sha256_exact
+            value: d597d6572c5616573170275d0b5d5e3ab0c06d4a9104bbdbe952c4bcb52118c9
+            feature: Brute Ratel C4 certificate (Unit 42 2022 cluster)
+            reason: Pinned v11a code carry-forward only; external provenance is pending.
+          - id: bruteratel-cert-serial-default
+            debt_id: B33-D07-BRC4-CERT-002
+            code_locator: repo@425897e8c36005e001e6f6254ede16117194f9d2:internal/engine/certdefaults.go:35-40
+            kind: cert_serial_decimal_exact
+            value: "476862511373535319627199034793753459614889484917"
+            feature: Brute Ratel C4 certificate (Unit 42 2022 cluster)
+            reason: Pinned v11a code carry-forward only; external provenance is pending.
