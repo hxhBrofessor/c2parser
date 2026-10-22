@@ -119,6 +119,25 @@ func requestTokens(m *httpMsg) []token {
 	return out
 }
 
+// unescapeRequestToken applies location-appropriate URL unescaping to a
+// request carrier token before decoding (Q-07 / CAND2). Query values were
+// already percent-decoded by url.ParseQuery in requestTokens, so they pass
+// through unchanged — a second unescape would turn a standard-base64 '+' into
+// a space and corrupt the token. Path, cookie and custom-header values are
+// percent-decoded with url.PathUnescape, which decodes %XX escapes but, unlike
+// QueryUnescape, leaves a literal '+' intact; the raw value is kept on any
+// unescape error. This both stops the double-decode corruption of query tokens
+// and recovers percent-encoded base64 carried in paths, cookies and headers.
+func unescapeRequestToken(loc, v string) string {
+	if loc == "query" || strings.HasPrefix(loc, "query:") {
+		return v
+	}
+	if u, err := url.PathUnescape(v); err == nil {
+		return u
+	}
+	return v
+}
+
 // isIDValue: hex digits and dashes only — UUIDs, traceparent, request ids.
 func isIDValue(v string) bool {
 	for i := 0; i < len(v); i++ {

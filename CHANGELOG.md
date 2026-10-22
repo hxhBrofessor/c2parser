@@ -5,6 +5,12 @@ change what a plain `c2parser capture.pcap` run reports; everything else
 only affects `-timing v2` or adds new output.
 
 ## v11.1 — Unreleased
+- **[default]** Request carrier tokens are now unescaped per location (Q-07): query values are not
+  unescaped a second time (url.ParseQuery already decoded them, so a base64 `+` is no longer turned
+  into a space), and path, cookie and custom-header values use url.PathUnescape (decode `%XX`, keep
+  a literal `+`). This recovers percent-encoded base64 carried in paths, cookies and headers and
+  stops `+`-corruption of request carrier tokens; new carrier detections may appear. Response-side
+  decoding is unchanged.
 - Deterministic tie handling for TLS certificate/SNI details, JA3/JA4 IOC details, UDP end-of-capture flush,
   scheduler cadence, and summary row ordering (PM-4).
 - Deterministic request query-parameter carrier token order (url.ParseQuery keys iterated sorted; value order

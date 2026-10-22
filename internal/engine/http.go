@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"net/netip"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -788,9 +787,7 @@ type decoded struct {
 func decodeCarrier(m *httpMsg, t token) decoded {
 	v := t.val
 	if m.req {
-		if u, err := url.QueryUnescape(v); err == nil {
-			v = u
-		}
+		v = unescapeRequestToken(t.loc, v)
 	} else if t.loc == "resp:body" && m.words != nil {
 		if h, ok := m.words.result(); ok {
 			return decoded{enc: "english", words: h}
