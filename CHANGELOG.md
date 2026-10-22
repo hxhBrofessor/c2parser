@@ -8,7 +8,9 @@ only affects `-timing v2` or adds new output.
 - Deterministic DNS/DGA tie order in both timing engines (lowest client address wins ties).
 - smb_pipe timing_series[].key grammar is now
   `pipe|<client addr:port>|<server addr:port>|<pipe>|<first frame>`, one per TCP connection instance;
-  -timing v2 diagnostic output only; documented in the v11.1 CHANGELOG; no compatibility shim.
+  -timing v2 diagnostic output only; diagnostic -timing v2 output only.
+- TCP connections that reuse a 4-tuple without FIN/RST are now parsed (each reuse gets its own reassembly state);
+  previously the second connection's application data was dropped.
 
 ## v11.0 — release (v11a + v11b)
 CLI version `11.0` is reported as `c2parser 11.0`. v11.0 contains the v11a
