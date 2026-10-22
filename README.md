@@ -55,7 +55,7 @@ ja4:t13d1516h2_8daaf6152771_02713d6af862
 ## Example output
 
 ```
-[1] CRITICAL 1.00  HTTP C2 192.168.1.32 → 100.113.27.34:80 (Host: 100.113.27.34)
+[1] CRITICAL 1.00  HTTP C2 192.168.1.32 → 203.0.113.10:80 (Host: 203.0.113.10)
     category: C2 channel | 2024-04-01T13:45:03Z → 2024-04-01T13:58:27Z
     • sig:havoc-demon-header             1.00×0.97  havoc-demon-header framing in 470 of 940 HTTP bodies
     • hdr:ua_c2_default                  1.00×0.75  User-Agent is the Havoc default (470/470 requests)

@@ -36,7 +36,7 @@ go build -o c2parser .
 
 IOC file: one per line, `kind:value # label` or bare values (kind is inferred):
 ```
-ip:100.113.27.34          # lab Havoc teamserver
+ip:203.0.113.10            # example teamserver
 domain:evil.example       # matches SNI, Host, DNS (suffix match)
 t13d1516h2_8daaf6152771_02713d6af862
 ja3:72a589da586844d7f0818ce684948eea
@@ -331,7 +331,7 @@ accumulate (Netskope's cumulative-risk model) instead of firing binary alerts.
 |---|---|---|
 | `http_c2_enum` | 11 per-packet hits, all server responses; **0 of 31** encrypted uploads | C2 **1.00** (Havoc framing in 530 bodies, default UA, 1.86 s beacon); exfil **0.95** (8.05 MB single-connection upload, 14 × 512 KB chunks) |
 | `http_c2_enum_part2` | 9 hits, 2 false positives | C2 **1.00** (beacon 0.88, 82% on-period); updog upload of `beacon4a.txt` (355 KB) **0.59**; nothing else ≥ 0.4 |
-| `smb2-wks` | 13 hits, 5 false positives (Edge CRX, certs); SMB not analysed | C2 **1.00**; `\\pipe\gainz` pivot **1.00** (49 Havoc frames, correlated to the HTTP C2 host, NTLM `sevenkingdoms.local\vagrant`) |
+| `smb2-wks` | 13 hits, 5 false positives (Edge CRX, certs); SMB not analysed | C2 **1.00**; `\\pipe\gainz` pivot **1.00** (49 Havoc frames, correlated to the HTTP C2 host, NTLM `EXAMPLE.LOCAL\labuser`) |
 | `smb2-data` | 0 | `gainz` pipe **0.99** (tree connect predates capture; identified by name shape + framing) |
 
 The 121 MB / 152k-packet part2 capture processes in ≈0.5 s.

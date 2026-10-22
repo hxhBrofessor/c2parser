@@ -80,7 +80,7 @@ captures:
     labels:
       source: per-capture
       c2:
-        - {client: 192.168.1.32, server: 100.113.27.34}
+        - {client: 192.168.1.32, server: 203.0.113.10}
 
   # Time-window labels: positive when the endpoints match and an event
   # falls inside the window (RFC 3339 or unix seconds)
