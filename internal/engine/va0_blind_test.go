@@ -180,6 +180,11 @@ func TestVA0BlindOutputNoFrameworkNames(t *testing.T) {
 			t.Errorf("BLIND output names framework %q", n)
 		}
 	}
+	// V0-1: the placeholder token must not appear either (it reveals that a
+	// framework was recognized).
+	if strings.Contains(string(blob), "[framework]") {
+		t.Error("BLIND output contains the [framework] placeholder token")
+	}
 }
 
 // (g) R0-3 severity boundaries: the harness severity uses production
