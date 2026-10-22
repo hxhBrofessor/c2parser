@@ -133,7 +133,12 @@ func topCount(m map[string]int) (string, int) {
 }
 
 func firstInvalidSNI(snis map[string]int, cert *x509.Certificate) string {
+	keys := make([]string, 0, len(snis))
 	for sni := range snis {
+		keys = append(keys, sni)
+	}
+	sort.Strings(keys)
+	for _, sni := range keys {
 		if cert.VerifyHostname(sni) != nil {
 			return sni
 		}
@@ -146,6 +151,7 @@ func sortedCertHashes(t *tlsAgg) []string {
 	for h := range t.certs {
 		keys = append(keys, h)
 	}
+	sort.Strings(keys)
 	return keys
 }
 
@@ -272,10 +278,13 @@ func (e *Engine) scoreBehavior(sc *scorer) {
 						Detail: fmt.Sprintf("JA4 %s is used by this host only toward this server (%.1f%% of its TLS)", j4, share*100)})
 				}
 			}
-			for kind, m := range map[string]map[string]int{"ja3": t.ja3.Map(), "ja4": t.ja4.Map(), "ja3s": t.ja3s.Map()} {
-				for v := range m {
-					if l, ok := e.ioc(kind, v); ok {
-						sigs = append(sigs, stats.Signal{Name: "ioc:" + kind, Weight: 0.9, Score: 1, Detail: fmt.Sprintf("%s %s matches IOC %q", kind, v, l)})
+			for _, fingerprint := range []struct {
+				kind   string
+				values map[string]int
+			}{{"ja3", t.ja3.Map()}, {"ja4", t.ja4.Map()}, {"ja3s", t.ja3s.Map()}} {
+				for _, v := range sortedCountKeys(fingerprint.values) {
+					if l, ok := e.ioc(fingerprint.kind, v); ok {
+						sigs = append(sigs, stats.Signal{Name: "ioc:" + fingerprint.kind, Weight: 0.9, Score: 1, Detail: fmt.Sprintf("%s %s matches IOC %q", fingerprint.kind, v, l)})
 						create = true
 					}
 				}
@@ -360,6 +369,7 @@ func sortedCountKeys(m map[string]int) []string {
 	for k := range m {
 		keys = append(keys, k)
 	}
+	sort.Strings(keys)
 	return keys
 }
 

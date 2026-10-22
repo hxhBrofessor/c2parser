@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"net/netip"
+	"sort"
 	"strings"
 
 	"c2parser/internal/stats"
@@ -149,6 +150,7 @@ func sortedDNSDomainKeys(domains map[string]*dnsDomain) []string {
 	for k := range domains {
 		keys = append(keys, k)
 	}
+	sort.Strings(keys)
 	return keys
 }
 
@@ -157,6 +159,7 @@ func sortedDNSClientAddrs(clients map[netip.Addr]*dnsSeries) []netip.Addr {
 	for k := range clients {
 		keys = append(keys, k)
 	}
+	sort.Slice(keys, func(i, j int) bool { return keys[i].Compare(keys[j]) < 0 })
 	return keys
 }
 

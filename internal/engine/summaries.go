@@ -35,7 +35,21 @@ func (e *Engine) httpSummaries() []HTTPChannelSummary {
 	// flow-heavy captures). Same order as sorting all rows.
 	chans := append([]*httpChannel(nil), e.httpOrder...)
 	sort.SliceStable(chans, func(i, j int) bool {
-		return chans[i].requests+chans[i].responses > chans[j].requests+chans[j].responses
+		a, b := chans[i], chans[j]
+		at, bt := a.requests+a.responses, b.requests+b.responses
+		if at != bt {
+			return at > bt
+		}
+		if a.key.client != b.key.client {
+			return a.key.client.Compare(b.key.client) < 0
+		}
+		if a.key.server != b.key.server {
+			return a.key.server.Compare(b.key.server) < 0
+		}
+		if a.key.port != b.key.port {
+			return a.key.port < b.key.port
+		}
+		return a.key.host < b.key.host
 	})
 	if len(chans) > e.cfg.MaxSummaryRows {
 		e.counters.SummaryRowsDropped += int64(len(chans) - e.cfg.MaxSummaryRows)
@@ -104,7 +118,59 @@ func (e *Engine) smbSummaries() []SMBFileSummary {
 }
 
 func sortSMBSummaries(out []SMBFileSummary) {
-	sort.SliceStable(out, func(i, j int) bool { return out[i].WriteBytes+out[i].ReadBytes > out[j].WriteBytes+out[j].ReadBytes })
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		at, bt := a.WriteBytes+a.ReadBytes, b.WriteBytes+b.ReadBytes
+		if at != bt {
+			return at > bt
+		}
+		if a.Client != b.Client {
+			return a.Client < b.Client
+		}
+		if a.Server != b.Server {
+			return a.Server < b.Server
+		}
+		if a.Share != b.Share {
+			return a.Share < b.Share
+		}
+		if a.Name != b.Name {
+			return a.Name < b.Name
+		}
+		if a.Pipe != b.Pipe {
+			return !a.Pipe
+		}
+		if a.NameKnown != b.NameKnown {
+			return !a.NameKnown
+		}
+		if a.FirstFrame != b.FirstFrame {
+			return a.FirstFrame < b.FirstFrame
+		}
+		if a.WriteBytes != b.WriteBytes {
+			return a.WriteBytes < b.WriteBytes
+		}
+		if a.ReadBytes != b.ReadBytes {
+			return a.ReadBytes < b.ReadBytes
+		}
+		if a.Writes != b.Writes {
+			return a.Writes < b.Writes
+		}
+		if a.Reads != b.Reads {
+			return a.Reads < b.Reads
+		}
+		if a.Transceives != b.Transceives {
+			return a.Transceives < b.Transceives
+		}
+		if a.C2Magic != b.C2Magic {
+			return a.C2Magic < b.C2Magic
+		}
+		if a.Opens != b.Opens {
+			return a.Opens < b.Opens
+		}
+		if a.NameInferred != b.NameInferred {
+			return !a.NameInferred
+		}
+		return strings.Join(a.Users, "\x00") < strings.Join(b.Users, "\x00")
+	})
 }
 
 // DNSDomainSummary describes queries under one registrable domain.
@@ -197,7 +263,23 @@ type ChannelSummary struct {
 
 func (e *Engine) topTalkers(n int) []ChannelSummary {
 	chs := append([]*channel(nil), e.chOrder...)
-	sort.SliceStable(chs, func(i, j int) bool { return chs[i].out+chs[i].in > chs[j].out+chs[j].in })
+	sort.SliceStable(chs, func(i, j int) bool {
+		a, b := chs[i], chs[j]
+		at, bt := a.out+a.in, b.out+b.in
+		if at != bt {
+			return at > bt
+		}
+		if a.key.proto != b.key.proto {
+			return a.key.proto < b.key.proto
+		}
+		if a.key.client != b.key.client {
+			return a.key.client.Compare(b.key.client) < 0
+		}
+		if a.key.server != b.key.server {
+			return a.key.server.Compare(b.key.server) < 0
+		}
+		return a.key.port < b.key.port
+	})
 	var out []ChannelSummary
 	for i, c := range chs {
 		if i == n {

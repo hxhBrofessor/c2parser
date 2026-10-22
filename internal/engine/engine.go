@@ -381,6 +381,12 @@ func sortedUDPKeys(flows map[connKey]*udpFlow) []connKey {
 	for k := range flows {
 		keys = append(keys, k)
 	}
+	sort.Slice(keys, func(i, j int) bool {
+		if c := keys[i].a.Compare(keys[j].a); c != 0 {
+			return c < 0
+		}
+		return keys[i].b.Compare(keys[j].b) < 0
+	})
 	return keys
 }
 
