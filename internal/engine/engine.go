@@ -787,6 +787,26 @@ func endpointAddrPort(n, t gopacket.Endpoint) netip.AddrPort {
 	return netip.AddrPortFrom(a.Unmap(), port)
 }
 
+// Connection-boundary table (observeTCP / packet / gopacket assembler):
+//
+//	Case                         observeTCP                 reassembly
+//	SYN after FIN/RST             new connection              new namespace
+//	SYN after >30s idle           new connection              new namespace
+//	SYN retransmit <30s            same connection             unchanged
+//	new ISN SYN <30s               same connection             unchanged
+//	RST mid-stream                 mark closed                 unchanged until next SYN
+//	data after idle, no SYN        same connection             unchanged
+//	retransmit / out-of-order      same connection             assembler handles it
+//	sequence wrap on live flow     same connection             unchanged
+//	capture starts mid-connection  new connection              original key
+//
+// Reuse generations alone receive a namespace; see DESIGN.md for test coverage.
+//
+// A superseded stream remains in the assembler until FlushCloseOlderThan
+// (2-minute idle cutoff, checked every 20,000 frames) or Finish's FlushAll.
+// This is one extra assembler stream per reuse during that window; its count is
+// bounded by the finite capture and reuse traffic in the flush window.
+//
 // reuseReassemblyFlow gives a reused TCP connection its own assembler key.
 // EndpointType is an int64 and, unlike Endpoint.Raw, has no address-size
 // limit, so the unique capture frame can distinguish the flow without
