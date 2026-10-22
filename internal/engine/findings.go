@@ -735,7 +735,15 @@ func (e *Engine) scoreDNS(sc *scorer) {
 		}
 		a.frames(d.firstFrame)
 	}
-	for client, c := range e.dns.clients {
+	// Sorted, not map order: equal-score NXDOMAIN-spread findings keep a
+	// stable order between runs (FIX-D1b).
+	dgaClients := make([]netip.Addr, 0, len(e.dns.clients))
+	for client := range e.dns.clients {
+		dgaClients = append(dgaClients, client)
+	}
+	slices.SortFunc(dgaClients, func(a, b netip.Addr) int { return a.Compare(b) })
+	for _, client := range dgaClients {
+		c := e.dns.clients[client]
 		n := len(c.nxBases)
 		if n < 5 {
 			continue
