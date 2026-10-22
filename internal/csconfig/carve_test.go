@@ -192,7 +192,7 @@ func TestDefaultKeyPrecedesFallbackWhenBothCarve(t *testing.T) {
 func TestVersionAnnotationAndEmptyMap(t *testing.T) {
 	got, c, ok := feedAndResult(makePlainFixture(0x1800, 0x2e, fixtureSettings(76)), Options{})
 	defer c.Close()
-	if !ok || got.Version != "≈ CS 4.9" {
+	if !ok || got.Version != "≈ CS 4.9" || got.VersionAnnotation != "max setting index 76 (≈ CS 4.9 per dissect.cobaltstrike v1.3.0)" {
 		t.Fatalf("index 76 version = %q, ok=%v", got.Version, ok)
 	}
 	got, c2, ok := feedAndResult(makePlainFixture(0x1800, 0x2e, fixtureSettings(76)), Options{VersionMap: map[uint16]string{}})
@@ -282,8 +282,8 @@ func TestRetainedWindowAndConcurrentCarverLimit(t *testing.T) {
 	c := New(Options{})
 	defer c.Close()
 	c.Feed(bytes.Repeat([]byte{0x5a}, 32<<20))
-	if c.RetainedBytes() > 3*0x1800 {
-		t.Fatalf("retained %d bytes; cap %d", c.RetainedBytes(), 3*0x1800)
+	if c.RetainedBytes() > 3*0x1800 || cap(c.buffer) > 3*0x1800 {
+		t.Fatalf("retained=%d capacity=%d; cap=%d", c.RetainedBytes(), cap(c.buffer), 3*0x1800)
 	}
 	limiter := NewLimiter(32)
 	carvers := make([]*Carver, 0, 33)
