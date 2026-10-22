@@ -4,6 +4,12 @@ Default output is the `-timing v1` engine. Entries marked **[default]**
 change what a plain `c2parser capture.pcap` run reports; everything else
 only affects `-timing v2` or adds new output.
 
+## v11.1 — Unreleased
+- Deterministic DNS/DGA tie order in both timing engines (lowest client address wins ties).
+- smb_pipe timing_series[].key grammar is now
+  `pipe|<client addr:port>|<server addr:port>|<pipe>|<first frame>`, one per TCP connection instance;
+  -timing v2 diagnostic output only; documented in the v11.1 CHANGELOG; no compatibility shim.
+
 ## v11.0 — release (v11a + v11b)
 CLI version `11.0` is reported as `c2parser 11.0`. v11.0 contains the v11a
 changes below plus the v11b work summarized here. Behavior-oriented C2
