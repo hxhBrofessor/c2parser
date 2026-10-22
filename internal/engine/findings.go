@@ -2,9 +2,11 @@ package engine
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"net/netip"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -607,7 +609,8 @@ func (e *Engine) scoreDNS(sc *scorer) {
 			e.contacted[ch.key.server] = true
 		}
 	}
-	for _, d := range e.dns.domains {
+	for _, base := range slices.Sorted(maps.Keys(e.dns.domains)) {
+		d := e.dns.domains[base]
 		ft := e.dnsFeatures(d)
 		u, avgLen, as, encoded := ft.u, ft.avgLen, ft.agg, ft.encoded
 		// best beacon among this domain's clients
@@ -616,7 +619,13 @@ func (e *Engine) scoreDNS(sc *scorer) {
 		var bestSigs []stats.Signal
 		bestStrength := 0.0
 		top, topN := netip.Addr{}, 0
-		for c, s := range d.clients {
+		clients := make([]netip.Addr, 0, len(d.clients))
+		for c := range d.clients {
+			clients = append(clients, c)
+		}
+		slices.SortFunc(clients, func(a, b netip.Addr) int { return a.Compare(b) })
+		for _, c := range clients {
+			s := d.clients[c]
 			if len(s.t) > topN {
 				top, topN = c, len(s.t)
 			}
