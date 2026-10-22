@@ -135,10 +135,20 @@ func TestVA0S1aNoSuppressedFramesOrPlaceholder(t *testing.T) {
 	if hasSignal(bf, "c2_framing_in_pipe") {
 		t.Error("BLIND pipe still carries the framework signal c2_framing_in_pipe")
 	}
-	// the magic frames belonged to the suppressed c2_framing_in_pipe and are
-	// the pipe finding's only frame source; BLIND must not carry them.
-	if len(bf.Frames) != 0 {
-		t.Errorf("BLIND pipe finding still carries %d frame(s) from the suppressed c2_framing_in_pipe: %v", len(bf.Frames), bf.Frames)
+	// the magic frames belonged to the suppressed c2_framing_in_pipe; BLIND
+	// must carry strictly fewer frames (those are dropped), while legitimate
+	// generic open/first-activity frames may remain.
+	fullSet := map[int64]bool{}
+	for _, fr := range full.Frames {
+		fullSet[fr] = true
+	}
+	if len(bf.Frames) >= len(full.Frames) {
+		t.Errorf("BLIND pipe should drop the suppressed framing frames: full=%v blind=%v", full.Frames, bf.Frames)
+	}
+	for _, fr := range bf.Frames {
+		if !fullSet[fr] {
+			t.Errorf("BLIND pipe has frame %d not in FULL", fr)
+		}
 	}
 	var dropped bool
 	for _, en := range br.Ledger.Entries {

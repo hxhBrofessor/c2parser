@@ -132,12 +132,20 @@ func (p *EvidencePolicy) suppresses(name string) bool {
 
 func (p *EvidencePolicy) frameworkNames() []string { return p.reg.FrameworkNames }
 
-// projectText replaces any registry framework name with a generic token
-// (R4: replaced, not deleted). Case-insensitive, longest names first so
-// "Cobalt Strike" is handled before "Cobalt".
+// projectText is the residual safety net (V0-1): any registry framework name
+// still present in surviving (generic) text is removed with neutral wording —
+// no "[framework]" token, which would itself reveal that a framework was
+// recognized. The primary mechanism is dropping evidence/frames of suppressed
+// signals (evidenceFrom/framesFrom), so this should rarely fire.
 func (p *EvidencePolicy) projectText(s string) string {
+	changed := false
 	for _, n := range p.reg.FrameworkNames {
-		s = replaceFold(s, n, "[framework]")
+		if r := replaceFold(s, n, ""); r != s {
+			s, changed = r, true
+		}
+	}
+	if changed {
+		s = strings.Join(strings.Fields(s), " ")
 	}
 	return s
 }

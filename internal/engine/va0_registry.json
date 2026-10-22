@@ -8,7 +8,6 @@
     "c2_default_pipe_name": "framework_specific",
     "mythic_message_in_pipe": "framework_specific",
     "c2_framing_in_pipe": "framework_specific",
-    "pivot_frame_header": "framework_specific",
 
     "pivot_from_c2_host": "derived_correlation",
     "same_channel_as_c2": "derived_correlation",
@@ -41,6 +40,7 @@
     "direct_ip_no_dns": "generic",
     "rare_user_agent": "generic",
     "wireguard_shape_on_dns_port": "generic",
+    "pivot_frame_header": "generic",
 
     "upload_volume_asymmetry": "generic",
     "encrypted_uploads": "generic",
@@ -90,7 +90,7 @@
     "dc_replication": "generic"
   },
   "families": {
-    "default_profile:": {"covenant": "framework_specific", "merlin": "framework_specific", "poshc2": "framework_specific", "cobaltstrike": "framework_specific"},
+    "default_profile:": {"covenant": "framework_specific", "merlin": "framework_specific", "poshc2": "framework_specific", "cobalt_strike": "framework_specific", "cobaltstrike": "framework_specific"},
     "sigma:": {"e1f2bf20": "sigma_attribution", "1cc74d57": "sigma_attribution", "96cd9d1f": "sigma_attribution", "0b00ae2f": "sigma_attribution", "50995159": "sigma_attribution"},
     "uri_shape:": {"checksum8-x86": "mixed", "checksum8-x64": "mixed", "word-dot-ext": "generic", "fixed-uri": "generic"},
     "hdr:": {"ua_c2_default": "framework_specific", "server_c2_default": "framework_specific", "ua_browser_without_browser_headers": "generic", "ua_stale_browser": "generic", "ua_legacy_msie": "generic", "invalid_request_content_type": "generic", "no_cache_post": "generic", "post_to_ip_literal": "generic", "ua_missing": "generic"},

@@ -83,8 +83,8 @@ func TestVA0RegistryCompleteness(t *testing.T) {
 // (b) per-class suppression.
 func TestVA0PerClassSuppression(t *testing.T) {
 	p := newEvidencePolicy(FrameworkBlindMode)
-	if !p.suppresses("pivot_frame_header") {
-		t.Error("framework_specific pivot_frame_header must be suppressed")
+	if !p.suppresses("c2_framing_in_pipe") {
+		t.Error("framework_specific c2_framing_in_pipe must be suppressed")
 	}
 	if !p.suppresses("sigma:e1f2bf20") {
 		t.Error("sigma_attribution sigma:e1f2bf20 must be suppressed")

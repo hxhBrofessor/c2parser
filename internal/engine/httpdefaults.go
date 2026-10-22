@@ -433,8 +433,9 @@ func scoreFrameworkDefaults(a *acc, h *httpChannel) {
 			continue
 		}
 		sort.Strings(feats)
-		a.add(stats.Signal{Name: "default_profile:" + strings.ToLower(strings.ReplaceAll(fw, " ", "_")), Weight: 0.95,
+		profSig := "default_profile:" + strings.ToLower(strings.ReplaceAll(fw, " ", "_"))
+		a.add(stats.Signal{Name: profSig, Weight: 0.95,
 			Score: math.Round(score*100) / 100, Detail: fmt.Sprintf("%s default HTTP profile: %s", fw, strings.Join(feats, "; "))})
-		a.frames(st.frames...)
+		a.framesFrom(profSig, st.frames...)
 	}
 }

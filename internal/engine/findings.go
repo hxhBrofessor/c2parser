@@ -109,6 +109,41 @@ func (a *acc) evidence(format string, args ...any) {
 	a.f.Evidence = append(a.f.Evidence, fmt.Sprintf(format, args...))
 }
 
+// blindSuppressed reports whether, in BLIND mode, the named signal is
+// suppressed. Always false on the FULL path (a.sc.pol == nil).
+func (a *acc) blindSuppressed(name string) bool {
+	return a.sc != nil && a.sc.pol != nil && a.sc.pol.Blind && a.sc.pol.suppresses(name)
+}
+
+// recordDrop notes a dropped evidence line / frame set in the audit ledger.
+func (a *acc) recordDrop(name, class string) {
+	if a.sc != nil && a.sc.collect != nil {
+		ki := a.sc.ensure(a.key, a.f.Category)
+		ki.suppressed = append(ki.suppressed, SuppressedSig{Name: name, Class: class})
+	}
+}
+
+// evidenceFrom adds an evidence line attributed to a signal. In BLIND, if that
+// signal is suppressed, the line is dropped (and recorded) instead of projected
+// (V0-1). Identical to evidence() on the FULL path.
+func (a *acc) evidenceFrom(sig, format string, args ...any) {
+	if a.blindSuppressed(sig) {
+		a.recordDrop(sig, "evidence_dropped")
+		return
+	}
+	a.evidence(format, args...)
+}
+
+// framesFrom adds frames attributed to a signal; dropped in BLIND when that
+// signal is suppressed (V0-1). Identical to frames() on the FULL path.
+func (a *acc) framesFrom(sig string, fr ...int64) {
+	if a.blindSuppressed(sig) {
+		a.recordDrop(sig, "frames_dropped")
+		return
+	}
+	a.frames(fr...)
+}
+
 func (a *acc) frames(fr ...int64) {
 next:
 	for _, f := range fr {
@@ -530,7 +565,7 @@ func (e *Engine) scoreSMB(sc *scorer) {
 				if f.magicHits > 0 {
 					a.add(stats.Signal{Name: "c2_framing_in_pipe", Weight: 0.97, Score: 1 - math.Pow(0.5, float64(f.magicHits)),
 						Detail: fmt.Sprintf("Havoc Demon framing (0xDEADBEEF) found %d times in pipe data", f.magicHits)})
-					a.frames(f.magicFrames...)
+					a.framesFrom("c2_framing_in_pipe", f.magicFrames...)
 				}
 				// v11a N3: an unknown constant frame header on a pipe that is
 				// not a standard Windows pipe; known magics (above) and UUID-
