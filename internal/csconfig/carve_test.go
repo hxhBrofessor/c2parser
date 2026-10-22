@@ -1,3 +1,4 @@
+// Synthetic fixtures below encode only wire facts in FORMAT.md; all payload content is invented for tests.
 package csconfig
 
 import (
@@ -175,6 +176,16 @@ func TestXorEncodedNearMissesAndOutOfScopeReason(t *testing.T) {
 				t.Fatalf("expected NOT_CARVED reason, got=%+v reason=%q ok=%v", got, c.Reason(), ok)
 			}
 		})
+	}
+}
+
+func TestDefaultKeyPrecedesFallbackWhenBothCarve(t *testing.T) {
+	fallback := makePlainFixture(0x1800, 0x43, fixtureSettings(76))
+	preferred := makePlainFixture(0x1800, 0x2e, fixtureSettings(76))
+	got, c, ok := feedAndResult(append(fallback, preferred...), Options{})
+	defer c.Close()
+	if !ok || got.XORKey != 0x2e {
+		t.Fatalf("default key should outrank fallback: config=%+v ok=%v reason=%q", got, ok, c.Reason())
 	}
 }
 
