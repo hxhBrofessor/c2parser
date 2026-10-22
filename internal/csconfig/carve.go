@@ -118,6 +118,7 @@ func New(opts Options) *Carver {
 		return c
 	}
 	c.admitted = true
+	c.buffer = make([]byte, 0, maxRetainedWindow)
 	return c
 }
 
@@ -308,7 +309,8 @@ func carveAtAnchor(raw []byte, anchor int, key byte, versions map[uint16]string)
 			continue
 		}
 		frequency := byteFrequency(raw, key)
-		return &Config{Settings: settings, MaxSettingIndex: maxIndex, Version: versionFor(maxIndex, versions), PatchSize: patchSize, XORKey: key, fallbackFrequency: frequency}
+		version := versionFor(maxIndex, versions)
+		return &Config{Settings: settings, MaxSettingIndex: maxIndex, Version: version, VersionAnnotation: versionAnnotation(maxIndex, version), PatchSize: patchSize, XORKey: key, fallbackFrequency: frequency}
 	}
 	return nil
 }

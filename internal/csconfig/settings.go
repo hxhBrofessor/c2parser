@@ -36,6 +36,7 @@ type Config struct {
 	Settings          []Setting `json:"settings"`
 	MaxSettingIndex   uint16    `json:"max_setting_index"`
 	Version           string    `json:"version"`
+	VersionAnnotation string    `json:"version_annotation"`
 	PatchSize         int       `json:"patch_size"`
 	XORKey            byte      `json:"xor_key"`
 	XorEncoded        bool      `json:"xorencoded"`
