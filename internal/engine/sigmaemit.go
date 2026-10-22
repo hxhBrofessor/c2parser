@@ -219,7 +219,18 @@ func (e *Engine) scoreSigma(sc *scorer) {
 			w = 0.3
 		}
 		s := 0.7 + 0.3*(1-math.Exp(-float64(h.count-1)/5))
-		sig := stats.Signal{Name: "sigma:" + shortID(r), Weight: w, Score: s,
+		sigName := "sigma:" + shortID(r)
+		// VA-0 BLIND: a suppressed sigma_attribution rule is never folded and
+		// emits no standalone finding, evidence or frame (recorded in the
+		// ledger). No-op on the FULL path.
+		if sc.pol != nil && sc.pol.Blind && sc.pol.suppresses(sigName) {
+			if sc.collect != nil {
+				ki := sc.ensure("sigma|"+key, string(CatSigma))
+				ki.suppressed = append(ki.suppressed, SuppressedSig{Name: sigName, Class: sc.pol.classify(sigName).String()})
+			}
+			continue
+		}
+		sig := stats.Signal{Name: sigName, Weight: w, Score: s,
 			Detail: fmt.Sprintf("[%s] %s — %d matching %s events, e.g. %q", r.Level, r.Title, h.count, r.Kind, h.sample)}
 		host := sc.accs[c2Key(h.client, h.server, h.port)]
 		if host == nil {

@@ -62,6 +62,10 @@ const (
 type acc struct {
 	f    *Finding
 	sigs map[string]stats.Signal
+	// VA-0 (nil/empty on the production path): sc back-reference and the
+	// scorer key, used only when a blind policy is injected.
+	sc  *scorer
+	key string
 	// srv is the server address whose DNS/SNI names fill f.ServerNames,
 	// looked up only for findings that are kept or capped (v9c 3.3).
 	srv      netip.Addr
@@ -84,6 +88,16 @@ func (a *acc) names(e *Engine) {
 
 func (a *acc) add(s stats.Signal) {
 	if s.Score <= 0 || s.Weight <= 0 {
+		return
+	}
+	// VA-0 BLIND: drop suppressed evidence before it is stored, so every
+	// downstream consumer (score, caps, correlate, scoreRecon) sees the blind
+	// signal set. Recorded in the audit ledger. No-op on the FULL path.
+	if a.sc != nil && a.sc.pol != nil && a.sc.pol.Blind && a.sc.pol.suppresses(s.Name) {
+		if a.sc.collect != nil {
+			ki := a.sc.ensure(a.key, a.f.Category)
+			ki.suppressed = append(ki.suppressed, SuppressedSig{Name: s.Name, Class: a.sc.pol.classify(s.Name).String()})
+		}
 		return
 	}
 	if old, ok := a.sigs[s.Name]; !ok || s.Contribution() > old.Contribution() {
@@ -136,6 +150,21 @@ type scorer struct {
 	e     *Engine
 	accs  map[string]*acc
 	order []string
+	// VA-0 (test/eval only; nil on the production path): pol injects the
+	// framework-blind policy, collect gathers per-key audit info. Both are
+	// nil in FULL, so the FULL instruction stream is unchanged.
+	pol     *EvidencePolicy
+	collect map[string]*blindKeyInfo
+}
+
+// ensure returns the collector entry for a scorer key (VA-0 harness only).
+func (sc *scorer) ensure(key, cat string) *blindKeyInfo {
+	ki := sc.collect[key]
+	if ki == nil {
+		ki = &blindKeyInfo{category: cat}
+		sc.collect[key] = ki
+	}
+	return ki
 }
 
 // drop removes a finding (merged into another).
@@ -167,7 +196,7 @@ func (sc *scorer) get(key, cat, title string, client, server netip.Addr, first, 
 		f.First = first.Format(time.RFC3339)
 		f.Last = last.Format(time.RFC3339)
 	}
-	a := &acc{f: f, sigs: map[string]stats.Signal{}, srv: server}
+	a := &acc{f: f, sigs: map[string]stats.Signal{}, srv: server, sc: sc, key: key}
 	sc.accs[key] = a
 	sc.order = append(sc.order, key)
 	return a
@@ -175,6 +204,16 @@ func (sc *scorer) get(key, cat, title string, client, server netip.Addr, first, 
 
 func (e *Engine) score() []Finding {
 	sc := &scorer{e: e, accs: map[string]*acc{}}
+	return e.scoreCore(sc)
+}
+
+// scoreCore is the shared scoring pipeline. With sc.pol == nil and
+// sc.collect == nil (the production path, from score()) it behaves exactly as
+// before. A non-nil FRAMEWORK_BLIND policy (VA-0 harness only) suppresses
+// evidence at acc.add and projects framework names out of the surviving
+// findings; a non-nil collect gathers per-key audit info without changing
+// output.
+func (e *Engine) scoreCore(sc *scorer) []Finding {
 	e.scoreHTTP(sc)
 	e.scoreChannels(sc)
 	e.scoreTunnels(sc)
@@ -268,6 +307,19 @@ func (e *Engine) score() []Finding {
 		// v9 Phase 1.2: below "low", an HTTP channel is not called C2.
 		if a.f.Category == CatC2 && a.f.Score < 0.2 && strings.HasPrefix(a.f.Title, "HTTP C2 ") {
 			a.f.Title = "HTTP channel " + strings.TrimPrefix(a.f.Title, "HTTP C2 ")
+		}
+		// VA-0 BLIND: project framework names out of the surviving finding's
+		// text (R4) and record per-key audit info. No-op on the FULL path.
+		if sc.pol != nil && sc.pol.Blind {
+			a.names(e)
+			sc.pol.projectFinding(a.f)
+		}
+		if sc.collect != nil {
+			ki := sc.ensure(k, a.f.Category)
+			ki.category = a.f.Category
+			ki.score = a.f.Score
+			ki.severity = a.f.Severity
+			ki.exists = a.f.Score >= 0.05
 		}
 		if a.f.Score >= 0.05 {
 			a.names(e)
