@@ -1,35 +1,45 @@
 # Cobalt Strike passive config format notes (WS-4 B-4.1)
 
-Status: format facts only. The provided references do not specify enough of the setting-block encoding to implement a parser without guessing. Unknown details are explicitly marked `UNVERIFIED`.
+This document is the implementation source of truth for the standalone passive carver. Reference facts are separated from local implementation decisions. Reference source code is never copied or translated.
 
-## Setting block
+## Reference identity
 
-The facts document describes approximately 80 indexed TLV settings, each with a type and value, and identifies the type families as short, int, pointer, and string. [F1, lines 19–25]
+The local reference is the two identical Downloads archives named `dissect.cobaltstrike-main.zip` and `dissect.cobaltstrike-main (1).zip`, SHA-256 `0aa5896e5dbb05b6805b11b38d4b5ae7dabf6d143f80ccf01ccc0bc2dec4f366`. They contain no Git metadata. `pyproject.toml` declares a VCS-derived dynamic version (`:7, :122-125`); `CHANGELOG.md` has an `[Unreleased]` heading and release `1.3.0` dated 2026-10-01 (`:8-10`). The reference source identity is therefore recorded as archive SHA plus changelog release 1.3.0; it is not asserted to be an exact Git tag tree. R-01b identifies the facts it extracted as tag v1.3.0, commit prefix `a1c35dd`.
 
-- Entry layout (index/type/length/value): **UNVERIFIED** beyond the general TLV description.
-- Byte order: **UNVERIFIED**.
-- Numeric type codes and type-specific lengths: **UNVERIFIED**.
-- End marker and its value: **UNVERIFIED**.
+## Setting block — reference facts
 
-These fields are required to parse values safely. No synthetic wire encoding is chosen in the absence of a citation.
+A setting is a six-byte header followed by its value: three big-endian uint16 fields in order `index`, `type`, `length`, then exactly `length` value bytes. Type codes are `TYPE_NONE=0`, `TYPE_SHORT=1`, `TYPE_INT=2`, and `TYPE_PTR=3`. Index zero terminates the settings walk (the first two bytes are `00 00`). [Reference: `beacon.py:234-246`, `:326`; R-01b: `struct Setting`, `SettingsType`, `walk_settings`, `iter_settings`]
 
-## Anchor, patch sizes, and XOR keys
+The whole candidate config block, headers included, is XORed before the settings are parsed. The default one-byte keys, in order, are `0x69`, `0x2e`, `0x00`; key `0x00` leaves bytes unchanged. [Reference: `beacon.py:447-448`, `:586-616`; `utils.py:20-30`; R-01b: `XOR scope`, `DEFAULT_XOR_KEYS`]
 
-The default single-byte XOR keys are `0x69`, `0x2e`, and `0x00`; if defaults miss, the reference uses a fallback over remaining single-byte keys ranked by byte frequency. The precise ranking algorithm is **UNVERIFIED**. [F1, line 17; F2, lines 5, 9]
+The anchor is DER rsaEncryption OID `06 09 2A 86 48 86 F7 0D 01 01 01` inside the public-key setting. The reference also recognizes DER sequence prefixes `30 81` and `30 82`. Its search accounts for rotated key phases. [Reference: `beacon.py:450-454`, `:586-616`; R-01b: `ASN1_RSA_ENCRYPTION`, `_DER_SEQ_PREFIXES`]
 
-The anchor is the DER `rsaEncryption` OID `06 09 2A 86 48 86 F7 0D 01 01 01` inside the public-key setting. Search is described as XOR-searching the OID with rotated key phases, locating the covering TLV, and extracting a fixed patch block. [F1, lines 18–19; F2, lines 6, 8]
+Config patch sizes are `0x1000` through Cobalt Strike 4.8 and `0x1800` from 4.9; the reference maximum patch size is `0x1800`. [Reference: `beacon.py:491-496`; R-01b: `BeaconPatchSize`]
 
-Patch size is `0x1000` through CS 4.8 and `0x1800` from CS 4.9. [F1, line 22; F2, line 7]
+The settings walk treats indices and types as opaque for discovery, advances by six header bytes plus the declared length, and stops on index zero. [Reference: `beacon.py:502-506`, `:518-548`; R-01b: `walk_settings`]
 
-## xorencoded wrapper
+## XOR-encoded stage wrapper — reference facts
 
-The documented wrapper byte layout is `| nonce (4 bytes) | encoded_size (4 bytes) | encoded MZ+payload |`. The wrapper is described as rolling 4-byte XOR. The exact state update, byte order of `encoded_size`, and relationship between nonce and successive payload bytes are **UNVERIFIED** in the provided fact notes. Therefore G-4.3 is `BLOCKED_MISSING_SOURCE`; no decoder or synthetic encoding is supplied. [F2, line 11; F3, lines 23–24]
+- Scan candidate nonce offsets from 0 through 1023; the first valid candidate is selected. [Reference: `xordecode.py:35-72`, `:89-107`]
+- The header is a four-byte nonce followed by a four-byte encoded size; payload starts eight bytes after the nonce offset. Decode size as little-endian uint32 of `(nonce XOR size_field)`. [Reference: `xordecode.py:35-65`, `:110-117`; `utils.py:120-143`; R-01b: `Header`, `Size decode`]
+- The decoded size must be at least `0x200`; payload must fit, with zero to 256 trailing bytes allowed. [Reference: `xordecode.py:26-27`, `:63-72`; R-01b: `Header validation`]
+- Payload decoding XORs each encoded byte with the ciphertext byte four positions earlier; the first four bytes use the nonce. The nonce remains fixed. [Reference: `xordecode.py:78-83`, `:128-137`; R-01b: `Rolling XOR`]
+- The decode path does not require an MZ check. [R-01b: `MZ check`]
 
-## Version map and reused indices
+## Setting identifiers and reused-index rules
 
-The map is many-to-one and should be expressed as an approximate range, not an exact version. The cited rows available in the facts document are:
+The relevant index names are declared in `beacon.py:61-232` (BeaconSetting enum). Reused meanings and reference disambiguation are:
 
-| Maximum setting index | Approximate version range |
+| Index | Meaning and resolution | Reference citation |
+|---:|---|---|
+| 16 | `KILLDATE_YEAR` when maximum setting index is below 74; `BOF_ALLOCATOR` otherwise | `beacon.py:80-81`, `:777-780`; R-01b: `BeaconSetting`, index 16 row |
+| 17 | `KILLDATE_MONTH` for SHORT; `SYSCALL_METHOD` for INT | `beacon.py:83-84`, `:774-776`; R-01b: index 17 row |
+| 36 | `INJECT_OPTIONS` for SHORT; `WATERMARKHASH` otherwise | `beacon.py:112-113`, `:771-773`; R-01b: index 36 row |
+| 48 | `PROCINJ_ALLOWED` for SHORT when maximum setting index is below 74; `PROCINJ_BOF_REUSE_MEM` otherwise | `beacon.py:134-135`, `:781-784`; R-01b: index 48 row |
+
+The maximum-index map is many-to-one; annotations must use approximate wording and unlisted indices are `unknown`. [Reference: `version.py:22-45`; R-01b: `Version map`]
+
+| Maximum index | Approximate version |
 |---:|---|
 | 20 | 3.4 |
 | 31 | 3.6 |
@@ -52,14 +62,20 @@ The map is many-to-one and should be expressed as an approximate range, not an e
 | 89 | 4.12 |
 | 91 | 4.13 |
 
-Annotate as `max setting index N (≈ CS x.y per dissect.cobaltstrike v1.3.0 map)`; absent entries are `unknown`. [F2, line 13; F3, lines 31–33]
+Required annotation: `max setting index N (≈ CS x.y per dissect.cobaltstrike v1.3.0)`. [Reference: `version.py:22-45`; R-01b: `Annotation wording`]
 
-Setting indices are reused across versions: 16 is `KILLDATE_YEAR` through 4.6 and `BOF_ALLOCATOR` from 4.7; 17 is `KILLDATE_MONTH` then `SYSCALL_METHOD` in 4.8; 36 is `INJECT_OPTIONS` then `WATERMARKHASH` from 4.5; index 48 is also reused, but the new meaning is **UNVERIFIED**. [F1, line 61]
+## Design decisions — c2parser rules, not reference facts
 
-## Citation key
+1. Decode SHORT and INT values as big-endian unsigned integers only when the declared length is exactly 2 or 4 bytes. For every other length, preserve raw bytes and set `unexpected_length`. PTR and other values remain raw. This is the R-01b value-width rule; it is deliberately tolerant rather than strict type/width validation. [R-01b: `Value width`]
+2. Try the three default XOR keys first. If none yields a valid anchored settings walk, try other byte keys in descending frequency of that byte in the retained candidate window, ties by ascending key value. Candidate acceptance requires the OID within a setting value and a structurally valid terminated walk. This deterministic order is an implementation choice, not a statement of reference behavior. The reference fallback instead ranks repeated four-byte equal-byte groups (`beacon.py:674-691`). This is an intentional, recorded divergence from the reference fallback order.
+3. At `Result()`, validate xorencoded candidates against the total number of bytes fed, using the retained bounded window for candidate bytes. This selects the R-01b streaming option that defers end-of-stream trailer validation until `Result()`. Never require MZ. [R-01b: `Streaming note`, `MZ check`]
+4. Do not implement 4.11 obfuscated wrappers, guardrails, or multi-byte XOR keys; report `NOT_CARVED` with a reason. [R-01b: `Still UNVERIFIED`; readiness review F3, Q-04]
+5. Retained input per carver is capped at three maximum patches (`3 × 0x1800` bytes); an independent concurrency limiter admits at most 32 carvers.
 
-- **F1:** `references/dissect-cobaltstrike-ttp-port.md` (copied input), line numbers refer to that file.
-- **F2:** local research fact sheet `R-01-dissect-cobaltstrike-facts.md`, line numbers refer to the original fact sheet.
-- **F3:** `references/v11b-technical-readiness-review-F2-F4.md` (copied input), line numbers refer to that file.
+## Citations and unresolved facts
 
-This is a facts-only clean-room note. No reference implementation code has been copied or translated.
+- **R-01b:** `R-01b-dissect-cobaltstrike-wire-facts.md`, symbols named above; its facts are checked against the local archive where file/line citations are given.
+- **Archive source files:** `dissect/cobaltstrike/beacon.py`, `xordecode.py`, `utils.py`, `version.py` in the archive identified above.
+- **Other scope facts:** `dissect-cobaltstrike-ttp-port.md` and `v11b-technical-readiness-review-F2-F4.md` supplied in the order inputs.
+
+No remaining wire-layout or wrapper fact required by this slice is marked UNVERIFIED. Ranking of the exact reference fallback is intentionally not replicated; its observed behavior is cited above and the deterministic c2parser order is a design decision. No reference code or real beacon material is included in this document.
