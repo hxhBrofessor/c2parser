@@ -48,7 +48,7 @@ and severity are unchanged.
     versions.
 - WS-4 (Cobalt Strike configuration carving) is not part of v11.0.
 
-## v11a — unreleased (v11.0 is tagged after v11b)
+## v11a — released 2026-10-19
 Candidate CLI version `11a` is reported as `c2parser 11a`. Behavior-oriented C2 heuristics and compatibility signals remain heuristic: a high or critical score is not confirmed framework attribution. On the 39 v10 corpus scenarios, `-timing v1` output is byte-identical to v10.0 except `shape-smb-pipe-framed` (J-E2 owner-approved scoped exception). The full 45-scenario, two-engine comparison has four owner-approved scoped dispositions (J-E1 for two v11a-added scenarios and J-E2 for the two SMB comparisons); this is not an unqualified regression PASS. See `docs/eval/v11-synthetic.md` for the four-row register.
 Separately, all 39 shared synthetic PCAPs were byte-identical when generated
 by v10 and S0. The human owner waived Gate A for v11a only on 2026-10-19.
