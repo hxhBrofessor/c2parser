@@ -18,7 +18,7 @@ only affects `-timing v2` or adds new output.
 - Deterministic DNS/DGA tie order in both timing engines (lowest client address wins ties).
 - smb_pipe timing_series[].key grammar is now
   `pipe|<client addr:port>|<server addr:port>|<pipe>|<first frame>`, one per TCP connection instance;
-  -timing v2 diagnostic output only; diagnostic -timing v2 output only.
+  diagnostic -timing v2 output only.
 - TCP connections that reuse a 4-tuple without FIN/RST are now parsed (each reuse gets its own reassembly state);
   previously the second connection's application data was dropped.
 
