@@ -1,10 +1,10 @@
-title: Havoc C2 Default HTTP Profile Request
+title: Havoc C2 HTTP Request (shipped example profile)
 id: e1f2bf20-99bc-4774-88ca-cd59024338dc
 status: experimental
-description: 'Havoc''s default listener profile: Chrome 96 / Windows 7 User-Agent, POST with the invalid request Content-Type ''*/*''. Observed in the 304th CY BN Havoc lab captures. cs-content-type is a c2parser-provided field.'
+description: 'Havoc ships example HTTP profiles and the operator selects one (there is no single fixed default). Matches a Havoc shipped example profile request: the Chrome 96 / Windows 7 User-Agent from profiles/http_smb.yaotl, a POST, and the literal Content-Type ''*/*'' observed in lab traffic. The ''*/*'' mechanism is not established (it may come from the agent or the HTTP stack). cs-content-type is a c2parser-provided field. A profile match is not confirmed framework ownership.'
 references:
-    - https://docs.mythic-c2.net/
-    - https://github.com/MythicC2Profiles
+    - https://github.com/HavocFramework/Havoc/blob/c84f7755/profiles/http_smb.yaotl#L34
+    - https://github.com/HavocFramework/Havoc/blob/c84f7755/WIKI.MD
 author: c2parser
 date: 2026-10-14
 tags:

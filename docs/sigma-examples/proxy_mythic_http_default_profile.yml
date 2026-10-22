@@ -1,3 +1,6 @@
+# optional example; not loaded by default; not authoritative attribution
+# WS-5 (Q-05, OWNER W5-3 = M-B): moved out of the embedded built-in set; original id kept.
+# Load explicitly with -sigma <dir> or C2PARSER_SIGMA if wanted. Reference status: docs/eval/ws5-sigma-findings.md
 title: Mythic C2 http Profile Default User-Agent and URIs
 id: 1cc74d57-3bf3-49c7-a71d-02bcfe6aca59
 status: experimental

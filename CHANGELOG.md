@@ -4,6 +4,23 @@ Default output is the `-timing v1` engine. Entries marked **[default]**
 change what a plain `c2parser capture.pcap` run reports; everything else
 only affects `-timing v2` or adds new output.
 
+## v11.2
+
+Work in progress. Framework-profile and Sigma signals remain heuristic; a profile
+or rule match is not confirmed framework attribution.
+
+- **WS-5 / Q-05 — built-in Sigma rule set.** The embedded set is now a single
+  Havoc-labelled HTTP rule (`e1f2bf20`, id unchanged; folds into the matching
+  C2 finding as before). The legacy `^baak` Sliver rule was **retired** (measured
+  corpus and lab delta zero; Sliver-like DNS is covered by the shape and
+  positional-randomness analysis, not a literal prefix). The three
+  Mythic/Apollo-labelled example rules (HTTP, WebSocket, SMB) moved to
+  `docs/sigma-examples/` as optional, non-authoritative examples — not compiled
+  in; load with `-sigma`/`C2PARSER_SIGMA`. The Havoc rule title/description were
+  de-identified (no unit or person strings) and its `references:` repointed to
+  Havoc-project sources; the `*/*` content type is recorded as lab-observed. The
+  hygiene gate now covers the whole tree and `strings(1)` of built binaries.
+
 ## v11.1
 
 v11.1 is a focused reliability and parsing release. It improves determinism and HTTP

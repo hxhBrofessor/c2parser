@@ -1,3 +1,6 @@
+# optional example; not loaded by default; not authoritative attribution
+# WS-5 (Q-05, OWNER W5-3 = M-B): moved out of the embedded built-in set; original id kept.
+# Load explicitly with -sigma <dir> or C2PARSER_SIGMA if wanted. Reference status: docs/eval/ws5-sigma-findings.md
 title: Mythic C2 websocket Profile Default Endpoint
 id: 96cd9d1f-db8e-4ce1-9e7d-18e7518af576
 status: experimental

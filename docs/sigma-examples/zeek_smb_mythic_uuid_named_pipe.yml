@@ -1,3 +1,6 @@
+# optional example; not loaded by default; not authoritative attribution
+# WS-5 (Q-05, OWNER W5-3 = M-B): moved out of the embedded built-in set; original id kept.
+# Load explicitly with -sigma <dir> or C2PARSER_SIGMA if wanted. Reference status: docs/eval/ws5-sigma-findings.md
 title: UUID-Shaped Named Pipe Opened Over SMB (Mythic smb Profile Default)
 id: 0b00ae2f-fba1-4415-85b0-e89fea259667
 status: experimental

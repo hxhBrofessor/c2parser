@@ -51,7 +51,7 @@ behavioural finding on the same channel.
 
 | Command | What happens |
 |---|---|
-| `c2parser cap.pcapng` | At most once per 24 h, asks GitHub for the latest SigmaHQ commit; downloads only if it changed (only the network/web/emerging-threats folders); then loads cache + 5 built-in rules |
+| `c2parser cap.pcapng` | At most once per 24 h, asks GitHub for the latest SigmaHQ commit; downloads only if it changed (only the network/web/emerging-threats folders); then loads cache + the 1 built-in rule |
 | `c2parser -update-sigma` | Check now and exit (with captures: check now, then analyse) |
 | `c2parser -offline …` | Never touch the network; cached + built-in rules |
 | `c2parser -no-sigma-update …` | Same as offline for Sigma only |
@@ -73,15 +73,17 @@ rule files larger than 1 MiB (`internal/sigma/update.go`). These are download
 and extraction bounds, not a total cache-size limit; older refs and local
 additions can remain in the user cache.
 
-Built-in rules (`rules/sigma/`, compiled into the binary) include Havoc- and
-Mythic-labelled compatibility rules and a Sliver-labelled DNS-shape rule.
-Those names and rule titles are detector labels, not independent proof that a
-matching flow belongs to that framework or that the pattern is a universal
-profile default. The available Mythic snapshot is under
-`_reference-sources/mythic/`; its archive commit is unverified and it does not
-include the separate profile implementations needed to establish the HTTP,
-WebSocket and SMB defaults claimed by the current rule metadata. For examples,
-copy a rule and change the detection. Escape
+Built-in rules (`rules/sigma/`, compiled into the binary) are a single
+Havoc-labelled HTTP compatibility rule (`e1f2bf20`). Its name and title are a
+detector label, not independent proof that a matching flow belongs to that
+framework or that the pattern is a universal profile default — Havoc ships
+example profiles and the operator picks one. Three Mythic/Apollo-labelled
+example rules (HTTP, WebSocket, SMB) are **not** compiled in; they live under
+`docs/sigma-examples/` as optional, non-authoritative examples and load only
+when passed explicitly with `-sigma`/`C2PARSER_SIGMA`. The available Mythic
+snapshot under `_reference-sources/mythic/` has an unverified archive commit
+and lacks the separate profile implementations needed to establish those
+defaults. For examples, copy a rule and change the detection. Escape
 literal `*`/`?` as `\*`/`\?`; e.g. Havoc's `Content-Type: */*` is `'\*/\*'`.
 
 The evaluator supports the modifiers and conditions the network corpus uses
@@ -293,11 +295,11 @@ be capped when their evidence is shape-only; and benign traffic using novel,
 high-randomness names can score highly. A DNS score is behavioral evidence,
 not confirmed C2 or Sliver attribution.
 
-One separate built-in Sigma rule, `rules/sigma/dns_sliver_beacon_name_shape.yml`,
-still matches the legacy literal `^baak`. This rule is distinct from the
-source-grounded DNS shape analysis and remains an unresolved specificity and
-attribution limitation; it is not being changed in this documentation-only
-checkpoint.
+The legacy `^baak` literal Sigma rule (`dns_sliver_beacon_name_shape.yml`) was
+**retired in v11.2** (WS-5 / Q-05): the prefix was not a universal Sliver
+property and its measured corpus/lab delta was zero. Sliver-like DNS is
+detected by the source-grounded shape and positional-randomness analysis, not
+a fixed prefix.
 
 ### 5. When content is hidden (encrypted DNS / TLS C2)
 From Active Countermeasures' encrypted-DNS comparison: encryption moves
