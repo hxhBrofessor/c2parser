@@ -31,7 +31,7 @@ Dynamic families and their closed suffix allow-lists (from R0): `default_profile
 | Registry entry | R0 CSV | VA-0 slice 1 | Why |
 |---|---|---|---|
 | `recon_from_c2_host`, `pivot_from_c2_host`, `same_channel_as_c2` | MIXED (suppress or rederive) | `derived_correlation` → rederive | R3 mandates recomputation from blind findings; `correlate`/`scoreRecon` already read the blind accs, so suppressing at `acc.add` would double-handle and wrongly delete a legitimately rederived join. |
-| `pivot_frame_header` | FRAMEWORK_SPECIFIC | unchanged (suppress) | listed vendor-specific frame catalogue. |
+| `pivot_frame_header` | FRAMEWORK_SPECIFIC | **generic** (retained) — S1a/V0-4 | Its detector (`internal/engine/frameprefix.go:191` `pivotFrameSignal`; design note lines 13–18) fires on **any** repeated constant 4-byte prefix (≥90% of ≥8 messages), labelled "unknown constant frame header… No attribution". It is explicitly the non-vendor counterpart of the magic-table `c2_framing_in_pipe` (which stays framework_specific). Per the review rule "detects any repeated constant prefix ⇒ generic". |
 | `sigma:50995159/1cc74d57/96cd9d1f/0b00ae2f` | framework_specific (5 bundled) | retained as pinned ids but **not embedded** post-WS-5 S2a (only `sigma:e1f2bf20` ships) | they still get a pinned classification in case loaded via `-sigma`. |
 
 ## 3. Fail-closed completeness (R2)
@@ -50,9 +50,15 @@ BLIND is applied to the per-finding signal set **before scoring and before corre
 6. **Caps inspect signal sets (timing / URI / DNS / recon).** The final loop rebuilds `a.f.Signals` from the blind `a.sigs` before the cap logic, so caps act on the blind set automatically.
 7. **`Result.Hosts` / report JSON / summaries.** `hostRisk` is recomputed from the blind findings. Summary strings are passed through the output projection (§5) so no framework name survives in `http_channels`/`smb_files`/`dns_domains` notes.
 
-## 5. Blind-safe output projection (R4)
+## 5. Blind-safe output projection (R4, revised by S1a/V0-1)
 
-A closed framework-name list lives in the registry: Havoc, Demon, Mythic, Apollo, Poseidon, Sliver, Cobalt Strike, Covenant, Merlin, PoshC2, Brute Ratel, Empire (plus any other names the engine emits). Generic words ("beacon", "pipe", "agent", "profile") are **excluded** and the exclusion list is documented in the registry. In BLIND, any occurrence of a listed name in a title, detail, evidence line or summary string is **replaced** by a generic rendering (`[framework]`), not deleted. Category labels (C2 channel, DNS tunnelling, SMB named-pipe, Sigma match, lateral movement, recon) are semantic, not framework names, and are kept.
+The primary mechanism is **dropping**, not projecting: an evidence line or frame set is linked to its originating signal (`acc.evidenceFrom` / `acc.framesFrom`), and in BLIND a suppressed signal's evidence and frames are dropped and recorded in the ledger (`evidence_dropped` / `frames_dropped`) — they never appear projected. Wired framework frame sites so far: `c2_framing_in_pipe` magic frames (`findings.go`) and `default_profile:*` frames (`httpdefaults.go`); B-4.4 `cs_config:*` evidence must use the same link so it disappears in BLIND rather than showing up projected.
+
+A closed framework-name list in the registry (Cobalt Strike, Brute Ratel, Havoc, Demon, Mythic, Apollo, Poseidon, Sliver, Covenant, Merlin, PoshC2, Empire; generic words such as "beacon", "pipe", "agent", "profile", "payload", "channel" are **excluded** and documented) drives a residual safety-net projection: any framework name still present in a surviving (generic) finding's title/detail/evidence/summary is **removed with neutral wording** — **no `[framework]` token** (S1a/V0-1: the token itself reveals recognition). With the drop mechanism in place this should rarely fire. Category labels (C2 channel, DNS tunnelling, SMB named-pipe, Sigma match, lateral movement, recon) are semantic, not framework names, and are kept (see §5a).
+
+### 5a. Category derivation (R3 / S1a-V0-3)
+
+Categories are generic semantic labels assigned by the detector at `sc.get`, not framework names, so they are retained in BLIND. The one category that is *framework-origin* is the standalone `Sigma match` finding (`CatSigma`), created only from a Sigma rule hit: when that rule is a suppressed `sigma_attribution` signal, the standalone finding has an empty blind signal set and is dropped by the `score ≥ 0.05` gate, so no framework-origin category survives. A finding that keeps a semantic category (e.g. `C2 channel`) on surviving generic signals keeps that category; the existing title demotion (`HTTP C2 …` → `HTTP channel …` below 0.2) already reflects the blind score. No per-detector category is derived from a framework name. OPEN-4: a finding whose category was chosen by a detector *because* a framework signal fired (not reflected in the signal set) is not separately re-derived in slice 1; none is known among current detectors, tracked as OPEN.
 
 ## 6. Audit ledger (R5)
 
