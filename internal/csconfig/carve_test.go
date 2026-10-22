@@ -174,12 +174,20 @@ func TestG44FalseCarveGuards(t *testing.T) {
 func TestXorEncodedNearMissesAndOutOfScopeReason(t *testing.T) {
 	short := makeXorEncodedFixture(bytes.Repeat([]byte{0x5a}, 0x1ff), [4]byte{1, 2, 3, 4}, 0)
 	longTrailer := makeXorEncodedFixture(bytes.Repeat([]byte{0x5a}, 0x200), [4]byte{5, 6, 7, 8}, 257)
-	for name, data := range map[string][]byte{"decoded size below minimum": short, "trailer above limit": longTrailer, "unknown wrapper": append([]byte("OBF!"), bytes.Repeat([]byte{0x42}, 1200)...)} {
-		t.Run(name, func(t *testing.T) {
-			got, c, ok := feedAndResult(data, Options{})
+	for _, tc := range []struct {
+		name string
+		data []byte
+		want Reason
+	}{
+		{"decoded size below minimum", short, ReasonNoAnchor},
+		{"trailer above limit", longTrailer, ReasonNoAnchor},
+		{"unknown wrapper", append([]byte("OBF!"), bytes.Repeat([]byte{0x42}, 1200)...), ReasonNoAnchor},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, c, ok := feedAndResult(tc.data, Options{})
 			defer c.Close()
-			if ok || got != nil || c.Reason() == "" {
-				t.Fatalf("expected NOT_CARVED reason, got=%+v reason=%q ok=%v", got, c.Reason(), ok)
+			if ok || got != nil || c.Reason() != tc.want {
+				t.Fatalf("expected NOT_CARVED reason %q, got=%+v reason=%q ok=%v", tc.want, got, c.Reason(), ok)
 			}
 		})
 	}
@@ -288,8 +296,8 @@ func TestRetainedWindowAndConcurrentCarverLimit(t *testing.T) {
 	c := New(Options{})
 	defer c.Close()
 	c.Feed(bytes.Repeat([]byte{0x5a}, 32<<20))
-	if c.RetainedBytes() > 3*0x1800 || cap(c.buffer) > 3*0x1800 {
-		t.Fatalf("retained=%d capacity=%d; cap=%d", c.RetainedBytes(), cap(c.buffer), 3*0x1800)
+	if c.RetainedBytes() > 2*3*0x1800 || cap(c.buffer) > 3*0x1800 || cap(c.derived.buffer) > 3*0x1800 {
+		t.Fatalf("retained=%d capacity=%d/%d; per-window cap=%d", c.RetainedBytes(), cap(c.buffer), cap(c.derived.buffer), 3*0x1800)
 	}
 	limiter := NewLimiter(32)
 	carvers := make([]*Carver, 0, 33)
@@ -306,6 +314,17 @@ func TestRetainedWindowAndConcurrentCarverLimit(t *testing.T) {
 	}
 }
 
+func TestLargeSingleFeedPreservesEarlyConfig(t *testing.T) {
+	data := append(makePlainFixture(0x1800, 0x2e, fixtureSettings(76)), bytes.Repeat([]byte{0x5a}, 1<<20)...)
+	c := New(Options{})
+	defer c.Close()
+	c.Feed(data)
+	got, ok := c.Result()
+	if !ok || got == nil || got.XORKey != 0x2e {
+		t.Fatalf("large single Feed lost early config: got=%+v reason=%q", got, c.Reason())
+	}
+}
+
 func FuzzCSConfigCarve(f *testing.F) {
 	f.Add([]byte("MZ"))
 	f.Add(makePlainFixture(0x1000, 0x2e, fixtureSettings(74)))
@@ -314,7 +333,7 @@ func FuzzCSConfigCarve(f *testing.F) {
 		defer c.Close()
 		c.Feed(data)
 		_, _ = c.Result()
-		if c.RetainedBytes() > 3*0x1800 {
+		if c.RetainedBytes() > 2*3*0x1800 {
 			t.Fatalf("retained %d bytes", c.RetainedBytes())
 		}
 	})
