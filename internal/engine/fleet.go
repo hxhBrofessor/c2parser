@@ -134,12 +134,30 @@ func (e *Engine) cadenceIndex() *cadence {
 	for _, k := range nkOrder {
 		c.add(k.name, k.client, stats.Sorted(named[k]), "", false)
 	}
-	for _, d := range e.dns.domains {
-		for cl, s := range d.clients {
+	for _, domainKey := range sortedDNSDomainKeys(e.dns.domains) {
+		d := e.dns.domains[domainKey]
+		for _, cl := range sortedDNSClientAddrs(d.clients) {
+			s := d.clients[cl]
 			c.add(d.base, cl.String(), s.t, "", false)
 		}
 	}
 	return c
+}
+
+func sortedDNSDomainKeys(domains map[string]*dnsDomain) []string {
+	keys := make([]string, 0, len(domains))
+	for k := range domains {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+func sortedDNSClientAddrs(clients map[netip.Addr]*dnsSeries) []netip.Addr {
+	keys := make([]netip.Addr, 0, len(clients))
+	for k := range clients {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // fleetNeed is the client count the fleet reason needs.

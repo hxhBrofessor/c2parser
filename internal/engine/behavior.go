@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"crypto/x509"
 	"fmt"
 	"math"
 	"net/netip"
@@ -131,6 +132,23 @@ func topCount(m map[string]int) (string, int) {
 	return best, n
 }
 
+func firstInvalidSNI(snis map[string]int, cert *x509.Certificate) string {
+	for sni := range snis {
+		if cert.VerifyHostname(sni) != nil {
+			return sni
+		}
+	}
+	return ""
+}
+
+func sortedCertHashes(t *tlsAgg) []string {
+	keys := make([]string, 0, len(t.certs))
+	for h := range t.certs {
+		keys = append(keys, h)
+	}
+	return keys
+}
+
 func (e *Engine) scoreBehavior(sc *scorer) {
 	start := e.first
 	for _, ch := range e.chOrder {
@@ -209,7 +227,8 @@ func (e *Engine) scoreBehavior(sc *scorer) {
 					Detail: fmt.Sprintf("%d/%d TLS connections sent no SNI (server addressed by IP)", t.noSNI, t.conns)})
 				create = create || frac >= 0.5 && (t.conns >= 3 || ch.maxConnSec >= 600 || ch.out >= 64<<10)
 			}
-			for _, c := range t.certs {
+			for _, hash := range sortedCertHashes(t) {
+				c := t.certs[hash]
 				if why, ok := knownC2Cert(c); ok {
 					sigs = append(sigs, stats.Signal{Name: "c2_default_certificate", Weight: 0.95, Score: 1,
 						Detail: fmt.Sprintf("%s: subject %q, serial %s", why, c.Subject, c.Serial)})
@@ -230,11 +249,10 @@ func (e *Engine) scoreBehavior(sc *scorer) {
 				if !start.IsZero() && c.NotAfter.Before(start) {
 					sigs = append(sigs, stats.Signal{Name: "expired_certificate", Weight: 0.15, Score: 1, Detail: "certificate expired " + c.NotAfter.Format("2006-01-02")})
 				}
-				for sni := range t.sni.Map() {
-					if c.cert != nil && c.cert.VerifyHostname(sni) != nil {
+				if c.cert != nil {
+					if sni := firstInvalidSNI(t.sni.Map(), c.cert); sni != "" {
 						sigs = append(sigs, stats.Signal{Name: "certificate_name_mismatch", Weight: 0.2, Score: 1,
 							Detail: fmt.Sprintf("SNI %s not valid for certificate %s", sni, c.Subject)})
-						break
 					}
 				}
 			}
@@ -262,7 +280,7 @@ func (e *Engine) scoreBehavior(sc *scorer) {
 					}
 				}
 			}
-			for h := range t.certs {
+			for _, h := range sortedCertHashes(t) {
 				if l, ok := e.ioc("cert", h); ok {
 					sigs = append(sigs, stats.Signal{Name: "ioc:cert", Weight: 0.9, Score: 1, Detail: "certificate matches IOC " + l})
 					create = true
@@ -335,6 +353,14 @@ func (e *Engine) scoreBehavior(sc *scorer) {
 			a.add(stats.Signal{Name: "ioc:domain", Weight: 0.9, Score: 1, Detail: h.key.host + " matches IOC " + l})
 		}
 	}
+}
+
+func sortedCountKeys(m map[string]int) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 func sortedKeysInt(t *tlsAgg) string {

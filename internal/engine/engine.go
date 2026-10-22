@@ -344,9 +344,7 @@ func (e *Engine) Finish() *Result {
 	for _, c := range e.allTCP {
 		e.finishConn(c)
 	}
-	for _, u := range e.udp {
-		u.flush(e)
-	}
+	e.flushUDP()
 	e.counters.TCPConns = len(e.allTCP)
 	e.counters.UDPFlows = len(e.udp)
 	for _, u := range e.udp {
@@ -376,6 +374,20 @@ func (e *Engine) Finish() *Result {
 		res.Timing = e.timingSeries
 	}
 	return res
+}
+
+func sortedUDPKeys(flows map[connKey]*udpFlow) []connKey {
+	keys := make([]connKey, 0, len(flows))
+	for k := range flows {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+func (e *Engine) flushUDP() {
+	for _, k := range sortedUDPKeys(e.udp) {
+		e.udp[k].flush(e)
+	}
 }
 
 func (e *Engine) addName(a netip.Addr, n string) {

@@ -99,10 +99,12 @@ func (e *Engine) smbSummaries() []SMBFileSummary {
 				Name: "<SMB3 encrypted session: content not visible>", ReadBytes: st.encBytes, Users: users})
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		return out[i].WriteBytes+out[i].ReadBytes > out[j].WriteBytes+out[j].ReadBytes
-	})
+	sortSMBSummaries(out)
 	return out
+}
+
+func sortSMBSummaries(out []SMBFileSummary) {
+	sort.SliceStable(out, func(i, j int) bool { return out[i].WriteBytes+out[i].ReadBytes > out[j].WriteBytes+out[j].ReadBytes })
 }
 
 // DNSDomainSummary describes queries under one registrable domain.
@@ -209,8 +211,8 @@ func (e *Engine) topTalkers(n int) []ChannelSummary {
 			cs.JA3, _ = topCount(t.ja3.Map())
 			cs.JA4, _ = topCount(t.ja4.Map())
 			cs.JA3S, _ = topCount(t.ja3s.Map())
-			for _, ci := range t.certs {
-				cs.CertSubject = ci.Subject
+			for _, hash := range sortedCertHashes(t) {
+				cs.CertSubject = t.certs[hash].Subject
 				break
 			}
 		}
