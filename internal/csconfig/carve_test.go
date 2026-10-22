@@ -138,6 +138,12 @@ func TestG43XorEncodedWrapper(t *testing.T) {
 	if !ok || !got.XorEncoded {
 		t.Fatalf("xorencoded carve = %+v, reason=%s, ok=%v", got, c.Reason(), ok)
 	}
+	withoutMZ := makeXorEncodedFixture(plain[2:], [4]byte{0x9a, 0xbc, 0xde, 0xf0}, 0)
+	got, c2, ok := feedAndResult(withoutMZ, Options{})
+	defer c2.Close()
+	if !ok || !got.XorEncoded {
+		t.Fatalf("xorencoded stage without MZ check = %+v, reason=%s, ok=%v", got, c2.Reason(), ok)
+	}
 }
 
 func TestG44FalseCarveGuards(t *testing.T) {
