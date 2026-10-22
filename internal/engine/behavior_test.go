@@ -126,7 +126,7 @@ func TestDoQPort(t *testing.T) {
 
 func TestParseIOCLine(t *testing.T) {
 	cases := map[string]IOC{
-		"100.113.27.34":                        {Kind: "ip", Value: "100.113.27.34"},
+		"203.0.113.10":                         {Kind: "ip", Value: "203.0.113.10"},
 		"Evil.Example.  # havoc":               {Kind: "domain", Value: "evil.example", Label: "havoc"},
 		"ja3:ABCDEF0123456789abcdef0123456789": {Kind: "ja3", Value: "abcdef0123456789abcdef0123456789"},
 		"t13d1516h2_8daaf6152771_02713d6af862": {Kind: "ja4", Value: "t13d1516h2_8daaf6152771_02713d6af862"},

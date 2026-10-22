@@ -330,7 +330,7 @@ func TestSMB2PipeTracking(t *testing.T) {
 
 func TestNTLMParse(t *testing.T) {
 	// Minimal NTLMSSP AUTHENTICATE with domain/user/workstation.
-	dom, usr, ws := u16le("SEVENKINGDOMS"), u16le("vagrant"), u16le("CST-WKS01")
+	dom, usr, ws := u16le("EXAMPLE"), u16le("labuser"), u16le("CST-WKS01")
 	m := make([]byte, 64)
 	copy(m, "NTLMSSP\x00")
 	binary.LittleEndian.PutUint32(m[8:], 3)
@@ -346,7 +346,7 @@ func TestNTLMParse(t *testing.T) {
 	put(44, ws)
 	m = append(append(append(m, dom...), usr...), ws...)
 	d, u, w, ok := parseNTLMAuth(append([]byte("junk-spnego-wrapper"), m...))
-	if !ok || d != "SEVENKINGDOMS" || u != "vagrant" || w != "CST-WKS01" {
+	if !ok || d != "EXAMPLE" || u != "labuser" || w != "CST-WKS01" {
 		t.Errorf("got %q %q %q %v", d, u, w, ok)
 	}
 }
