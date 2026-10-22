@@ -6,6 +6,7 @@ import (
 	"hash/fnv"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 
 	"c2parser/internal/stats"
@@ -83,8 +84,15 @@ func requestTokens(m *httpMsg) []token {
 				out = append(out, token{"query", rawq})
 			}
 		}
-		for k, vs := range vals {
-			for _, v := range vs {
+		// url.ParseQuery returns a map; iterate keys in sorted order so token
+		// order is deterministic (PM-4). Each key's value order is preserved.
+		qkeys := make([]string, 0, len(vals))
+		for k := range vals {
+			qkeys = append(qkeys, k)
+		}
+		sort.Strings(qkeys)
+		for _, k := range qkeys {
+			for _, v := range vals[k] {
 				if len(v) >= minTokenLen {
 					out = append(out, token{"query:" + k, v})
 				} else if v == "" && len(k) >= minTokenLen { // bare "?<token>"
