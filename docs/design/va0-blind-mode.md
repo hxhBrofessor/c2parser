@@ -1,0 +1,70 @@
+# VA-0: framework-blind evidence policy, registry and harness
+
+Status: VA-0 slice 1 (architecture + registry + policy + harness + FULL-vs-BLIND measurement preview).
+Test/eval harness only — **no CLI flag, no env var, no product default**. FULL output is byte-identical to the baseline.
+Authority: G-VA VA-0..VA-8 (ratified, R0-3), ChatGPT B-3, owner W5-5, owner VA-0 S1 authorization. No thresholds; VA-1/VA-2 unratified.
+
+## 1. Modes and entry point
+
+`EvidenceMode` is exactly `FULL` or `FRAMEWORK_BLIND`; any other value is `INVALID_MODE`.
+
+- FULL is the production path. It is the identity: the scorer runs with `pol == nil` and no BLIND branch executes. `Engine.score()` is unchanged in behaviour.
+- BLIND is reachable only through `Engine.EvaluateBlind()` (test/eval only; never called from `Finish`/CLI). It runs the **same** detector pipeline (`scoreCore`) with a non-nil policy, then a blind-safe output projection, and returns FULL findings, BLIND findings and the audit ledger.
+
+`scoreCore(sc)` holds the shared pipeline; `score()` calls it with `sc.pol == nil`. Every BLIND branch is guarded by `sc.pol != nil && sc.pol.Blind`, so the FULL instruction stream is untouched (proven by R6).
+
+## 2. Registry (R1) — closed, data-not-code
+
+Seeded from the R0 `SIGNAL_CLASSIFICATION_MATRIX.csv`, embedded as `internal/engine/va0_registry.json` (`go:embed`). Each signal name resolves by **exact name first**, then by a **registered dynamic family prefix with a closed suffix allow-list**; anything else is `UNKNOWN`.
+
+Classes and BLIND action:
+- `framework_specific` → **suppress** (drop the signal before it is stored; record in the ledger).
+- `sigma_attribution` → **suppress**; decided by the rule's pinned exact short-id in the registry (today only `sigma:e1f2bf20`), **never** by string-matching the title.
+- `generic` → **retain**.
+- `derived_correlation` → **rederive** (retain; see §4, R3 bullet). Justified delta from the CSV (which lists the correlation row as MIXED "suppress or rederive"): we rederive, because `correlate`/`scoreRecon` run over the already-blind accumulators, so these signals are naturally recomputed from blind findings only.
+- `mixed` → **suppress** for slice 1 (the signal is dropped; its generic siblings in the same finding are kept independently). Sanitising-and-proving-neutral is deferred (OPEN-1).
+- `UNKNOWN` → **block = fail closed**: treated as `framework_specific`, suppressed **and** recorded as `unclassified` (R2).
+
+Dynamic families and their closed suffix allow-lists (from R0): `default_profile:` (covenant, merlin, poshc2, cobaltstrike → framework_specific; any other suffix → UNKNOWN/block), `sigma:` (pinned exact id set → class per id; anything else → UNKNOWN/block), `uri_shape:` (checksum8-x86, checksum8-x64 → mixed; word-dot-ext, fixed-uri → generic; else block), `hdr:` (closed anomaly-name set → generic; ua_c2_default, server_c2_default → suppress; else block), `ioc:` (domain/ip/cert/ja3/ja4/ja3s → mixed/suppress), `rpc:` (closed operation allow-list → generic; else block), `sig:` (pe/elf/zip/7z/rar → generic; havoc-demon-header, mythic-agent-message → framework_specific; else block), `encoded_payload_in_` (query/path/cookie/header/resp → generic; else block). No broad string filtering.
+
+### R0 classification deltas (each justified)
+| Registry entry | R0 CSV | VA-0 slice 1 | Why |
+|---|---|---|---|
+| `recon_from_c2_host`, `pivot_from_c2_host`, `same_channel_as_c2` | MIXED (suppress or rederive) | `derived_correlation` → rederive | R3 mandates recomputation from blind findings; `correlate`/`scoreRecon` already read the blind accs, so suppressing at `acc.add` would double-handle and wrongly delete a legitimately rederived join. |
+| `pivot_frame_header` | FRAMEWORK_SPECIFIC | unchanged (suppress) | listed vendor-specific frame catalogue. |
+| `sigma:50995159/1cc74d57/96cd9d1f/0b00ae2f` | framework_specific (5 bundled) | retained as pinned ids but **not embedded** post-WS-5 S2a (only `sigma:e1f2bf20` ships) | they still get a pinned classification in case loaded via `-sigma`. |
+
+## 3. Fail-closed completeness (R2)
+
+A completeness test enumerates every signal name produced by the corpus (45 scenarios × v1/v2) and the existing unit tests, and fails on any name the registry cannot classify. A mutation case injects a fake name and asserts the test fails. Unregistered dynamic suffixes resolve to UNKNOWN → block, never generic.
+
+## 4. Policy stage placement (R3) and the acc.add bypass checklist
+
+BLIND is applied to the per-finding signal set **before scoring and before correlation**, by suppressing at `acc.add` (the signal-insertion choke point). Because every downstream consumer reads `a.sigs`, this is sufficient for scoring, caps and correlation; the remaining bypasses are handled explicitly. Each R0 bypass:
+
+1. **Finding creation / metadata before signals (`sc.get`).** Existence is decided by the final `score >= 0.05` gate: a finding whose only signals were suppressed has an empty blind set → NoisyOR 0 → dropped. A mixed finding keeps its generic signals and survives with a recomputed (≤ FULL) score. Category/title are projected (§5).
+2. **Evidence and frames (`acc.evidence`, `acc.frames`).** Not stored signals; handled by the output projection (§5), which replaces framework names in evidence/detail text. Suppressed-sigma evidence is additionally never emitted (bypass 4).
+3. **Detector create decisions inspecting framework signals (`scoreBehavior`).** The create decision may still run, but with the framework signal suppressed the acc carries only its generic signals (or none → dropped by the 0.05 gate). No FULL-path change.
+4. **`scoreSigma` host-pair index / folding.** Explicit BLIND guard: a `sigma_attribution` signal that the registry suppresses is never folded and no standalone Sigma finding, evidence or frame is emitted for it (recorded in the ledger).
+5. **`correlate` / `scoreRecon` derive from prior findings.** They read `a.score()` over the blind `a.sigs` and `a.capped(...)`, so joins (`pivot_from_c2_host`, `same_channel_as_c2`, `recon_from_c2_host`) fire only when the blind-surviving finding still clears the threshold — i.e. rederived from blind findings only. No separate suppression needed.
+6. **Caps inspect signal sets (timing / URI / DNS / recon).** The final loop rebuilds `a.f.Signals` from the blind `a.sigs` before the cap logic, so caps act on the blind set automatically.
+7. **`Result.Hosts` / report JSON / summaries.** `hostRisk` is recomputed from the blind findings. Summary strings are passed through the output projection (§5) so no framework name survives in `http_channels`/`smb_files`/`dns_domains` notes.
+
+## 5. Blind-safe output projection (R4)
+
+A closed framework-name list lives in the registry: Havoc, Demon, Mythic, Apollo, Poseidon, Sliver, Cobalt Strike, Covenant, Merlin, PoshC2, Brute Ratel, Empire (plus any other names the engine emits). Generic words ("beacon", "pipe", "agent", "profile") are **excluded** and the exclusion list is documented in the registry. In BLIND, any occurrence of a listed name in a title, detail, evidence line or summary string is **replaced** by a generic rendering (`[framework]`), not deleted. Category labels (C2 channel, DNS tunnelling, SMB named-pipe, Sigma match, lateral movement, recon) are semantic, not framework names, and are kept.
+
+## 6. Audit ledger (R5)
+
+Per finding: the suppressed signal names, their classes (incl. `unclassified` for fail-closed), and the FULL→BLIND score/severity delta (computed by the harness by matching FULL and BLIND findings on their key). Ledger is harness/test-only and never carries raw payload bytes. It is the raw material for VA-3/VA-5.
+
+## 7. FULL identity (R6) and severity (R7)
+
+R6 proof: v1+v2 JSON byte-identical to baseline on all 45 scenarios; empty-register behavior_diff 143/143 changed 0; lab counts identical. R7: all FULL/BLIND comparisons use production `stats.Severity(round2(score))`; boundary tests at raw 0.394/0.395/0.400 take expected values from production rounding.
+
+## 8. WS-4 coupling (R8) and OPEN items
+
+- R8: a registry slot is reserved for `cs_config:` → `framework_specific` (Codex B-4.4 later). `internal/csconfig` is untouched by this slice.
+- OPEN-1: `mixed` signals (uri_shape:checksum8-*, cert anomalies with framework detail, ioc:*, hdr:ua_c2_default) are suppressed wholesale in slice 1; the "sanitize detail and independently prove neutral behavior" path (R0) is deferred.
+- OPEN-2: summary projection is a text scrub; a structural blind summary builder is deferred.
+- OPEN-3: VA-1/VA-2/VA-6 need WS-9 datasets and ratified thresholds.
