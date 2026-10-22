@@ -5,6 +5,10 @@ change what a plain `c2parser capture.pcap` run reports; everything else
 only affects `-timing v2` or adds new output.
 
 ## v11.1 — Unreleased
+- Deterministic tie handling for TLS certificate/SNI details, JA3/JA4 IOC details, UDP end-of-capture flush,
+  scheduler cadence, and summary row ordering (PM-4).
+- Deterministic request query-parameter carrier token order (url.ParseQuery keys iterated sorted; value order
+  kept), so findings no longer depend on Go map iteration order (PM-4).
 - Deterministic DNS/DGA tie order in both timing engines (lowest client address wins ties).
 - smb_pipe timing_series[].key grammar is now
   `pipe|<client addr:port>|<server addr:port>|<pipe>|<first frame>`, one per TCP connection instance;
