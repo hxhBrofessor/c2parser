@@ -41,6 +41,7 @@ type Config struct {
 	XORKey            byte      `json:"xor_key"`
 	XorEncoded        bool      `json:"xorencoded"`
 	fallbackFrequency int
+	absoluteStart     int64
 }
 
 func parseSettings(data []byte, start int) ([]Setting, uint16, bool, bool) {

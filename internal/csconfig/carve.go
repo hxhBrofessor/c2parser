@@ -19,6 +19,8 @@ const (
 	wrapperMinimumSize   = 0x200
 	wrapperMaximumSlack  = 256
 	maxConcurrentCarvers = 32
+	maxPendingAnchors    = 128
+	maxCarveWork         = 8192
 )
 
 // Default key values and OID bytes are cited in FORMAT.md, "Anchor, patch sizes, and XOR keys".
@@ -31,12 +33,13 @@ var (
 type Reason string
 
 const (
-	ReasonNone          Reason = ""
-	ReasonNoAnchor      Reason = "no_anchor"
-	ReasonInvalidConfig Reason = "invalid_or_truncated_config"
-	ReasonInvalidStage  Reason = "invalid_xorencoded_wrapper"
-	ReasonResourceLimit Reason = "resource_limit"
-	ReasonOutOfScope    Reason = "out_of_scope_wrapper"
+	ReasonNone                     Reason = ""
+	ReasonNoAnchor                 Reason = "no_anchor"
+	ReasonAnchorWithoutValidConfig Reason = "anchor_without_valid_config"
+	ReasonWorkBudgetExhausted      Reason = "work_budget_exhausted"
+	ReasonInvalidStage             Reason = "invalid_xorencoded_wrapper"
+	ReasonResourceLimit            Reason = "resource_limit"
+	ReasonOutOfScope               Reason = "out_of_scope_wrapper"
 )
 
 // Limiter caps concurrent standalone carvers without an engine dependency.
@@ -84,21 +87,42 @@ type anchorCandidate struct {
 	key      byte
 }
 
+type wrapperCandidate struct {
+	offset int64
+	size   uint32
+}
+
+type plainScanner struct {
+	buffer    []byte
+	total     int64
+	pending   []anchorCandidate
+	config    *Config
+	hadAnchor bool
+	workUsed  *int
+	exhausted *bool
+}
+
 // Carver keeps only a bounded rolling input window and stores parsed results, never payload logs.
 type Carver struct {
-	mu         sync.Mutex
-	options    Options
-	versions   map[uint16]string
-	limiter    *Limiter
-	admitted   bool
-	closed     bool
-	total      int64
-	buffer     []byte
-	overlap    []byte
-	pending    []anchorCandidate
-	config     *Config
-	reason     Reason
-	badWrapper bool
+	mu            sync.Mutex
+	options       Options
+	versions      map[uint16]string
+	limiter       *Limiter
+	admitted      bool
+	closed        bool
+	total         int64
+	buffer        []byte // compatibility view of the plain scanner's bounded window
+	plain         plainScanner
+	derived       plainScanner
+	derivedTail   [wrapperNonceSize]byte
+	derivedSeen   int
+	headerPrefix  []byte
+	headerScanned int
+	wrappers      []wrapperCandidate
+	config        *Config
+	reason        Reason
+	workUsed      int
+	workExhausted bool
 }
 
 func New(opts Options) *Carver {
@@ -118,96 +142,176 @@ func New(opts Options) *Carver {
 		return c
 	}
 	c.admitted = true
-	c.buffer = make([]byte, 0, maxRetainedWindow)
+	c.plain.buffer = make([]byte, 0, maxRetainedWindow)
+	c.derived.buffer = make([]byte, 0, maxRetainedWindow)
+	c.buffer = c.plain.buffer
+	c.plain.workUsed, c.derived.workUsed = &c.workUsed, &c.workUsed
+	c.plain.exhausted, c.derived.exhausted = &c.workExhausted, &c.workExhausted
+	// Four prefix bytes preserve absolute positions in the derived stream.
+	c.derived.feed(make([]byte, wrapperNonceSize), versions, false)
 	return c
 }
 
-// Feed accepts arbitrary chunk sizes while retaining no more than maxRetainedWindow input bytes.
+// Feed accepts arbitrary chunk sizes while retaining two bounded decode windows.
 func (c *Carver) Feed(data []byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed || !c.admitted || len(data) == 0 {
 		return
 	}
+	oldTotal := c.total
+	c.scanWrapperHeaders(data, oldTotal)
 	for len(data) > 0 {
 		n := len(data)
 		if n > maxPatchSize {
 			n = maxPatchSize
 		}
-		oldTotal := c.total
 		chunk := data[:n]
-		c.appendWindow(chunk)
+		c.feedDerived(chunk)
+		c.plain.feed(chunk, c.versions, false)
+		c.buffer = c.plain.buffer
 		c.total += int64(n)
-		base := c.total - int64(len(c.buffer))
+		data = data[n:]
+	}
+}
+
+func (c *Carver) feedDerived(data []byte) {
+	derived := make([]byte, 0, len(data))
+	for _, value := range data {
+		if c.derivedSeen >= wrapperNonceSize {
+			derived = append(derived, value^c.derivedTail[c.derivedSeen%wrapperNonceSize])
+		}
+		c.derivedTail[c.derivedSeen%wrapperNonceSize] = value
+		c.derivedSeen++
+	}
+	c.derived.feed(derived, c.versions, false)
+}
+
+func (c *Carver) scanWrapperHeaders(data []byte, oldTotal int64) {
+	const prefixLimit = wrapperScanLimit + wrapperHeaderSize
+	if oldTotal < prefixLimit {
+		need := prefixLimit - len(c.headerPrefix)
+		if need > len(data) {
+			need = len(data)
+		}
+		if need > 0 {
+			c.headerPrefix = append(c.headerPrefix, data[:need]...)
+		}
+	}
+	for c.headerScanned < wrapperScanLimit && c.headerScanned+wrapperHeaderSize <= len(c.headerPrefix) {
+		offset := c.headerScanned
+		c.headerScanned++
+		header := c.headerPrefix[offset : offset+wrapperHeaderSize]
+		var sizeBytes [wrapperNonceSize]byte
+		for i := range sizeBytes {
+			sizeBytes[i] = header[i] ^ header[wrapperNonceSize+i]
+		}
+		size := binary.LittleEndian.Uint32(sizeBytes[:])
+		if size >= wrapperMinimumSize {
+			c.wrappers = append(c.wrappers, wrapperCandidate{offset: int64(offset), size: size})
+		}
+	}
+}
+
+func validateWrappedConfig(candidate wrapperCandidate, configStart, configEnd, total int64) (valid, invalid bool) {
+	end := candidate.offset + wrapperHeaderSize + int64(candidate.size)
+	inside := configStart >= candidate.offset+12 && configEnd <= end && configStart < configEnd
+	if inside && end <= total && total-end <= wrapperMaximumSlack {
+		return true, false
+	}
+	return false, true
+}
+
+func (s *plainScanner) appendWindow(data []byte) {
+	if len(data) >= maxRetainedWindow {
+		s.buffer = append(s.buffer[:0], data[len(data)-maxRetainedWindow:]...)
+		return
+	}
+	need := len(s.buffer) + len(data) - maxRetainedWindow
+	if need > 0 {
+		copy(s.buffer, s.buffer[need:])
+		s.buffer = s.buffer[:len(s.buffer)-need]
+	}
+	s.buffer = append(s.buffer, data...)
+}
+
+func (s *plainScanner) feed(data []byte, versions map[uint16]string, final bool) {
+	for len(data) > 0 && !*s.exhausted {
+		n := len(data)
+		if n > maxPatchSize {
+			n = maxPatchSize
+		}
+		oldTotal := s.total
+		chunk := data[:n]
+		s.appendWindow(chunk)
+		s.total += int64(n)
+		base := s.total - int64(len(s.buffer))
 		first := int(oldTotal-base) - (len(rsaEncryptionOID) - 1)
 		if first < 0 {
 			first = 0
 		}
-		for pos := first; pos+len(rsaEncryptionOID) <= len(c.buffer); pos++ {
-			key, ok := anchorKey(c.buffer, pos)
-			if !ok {
-				continue
+		for pos := first; pos+len(rsaEncryptionOID) <= len(s.buffer); pos++ {
+			key, ok := anchorKey(s.buffer, pos)
+			if ok {
+				s.hadAnchor = true
+				s.addPending(anchorCandidate{absolute: base + int64(pos), key: key})
 			}
-			c.addPending(anchorCandidate{absolute: base + int64(pos), key: key})
 		}
-		c.tryPending()
+		s.tryPending(versions, false)
 		data = data[n:]
-		if c.config != nil && c.config.XORKey == defaultXORKeys[0] && len(data) > 0 {
-			c.total += int64(len(data))
-			return
-		}
+	}
+	if final {
+		s.tryPending(versions, true)
 	}
 }
 
-func (c *Carver) appendWindow(data []byte) {
-	if len(data) >= maxRetainedWindow {
-		c.buffer = append(c.buffer[:0], data[len(data)-maxRetainedWindow:]...)
-		return
-	}
-	need := len(c.buffer) + len(data) - maxRetainedWindow
-	if need > 0 {
-		copy(c.buffer, c.buffer[need:])
-		c.buffer = c.buffer[:len(c.buffer)-need]
-	}
-	c.buffer = append(c.buffer, data...)
-}
-
-func (c *Carver) addPending(candidate anchorCandidate) {
-	for _, old := range c.pending {
+func (s *plainScanner) addPending(candidate anchorCandidate) {
+	for _, old := range s.pending {
 		if old.absolute == candidate.absolute && old.key == candidate.key {
 			return
 		}
 	}
-	if len(c.pending) >= maxRetainedWindow/len(rsaEncryptionOID) {
-		copy(c.pending, c.pending[1:])
-		c.pending = c.pending[:len(c.pending)-1]
-	}
-	c.pending = append(c.pending, candidate)
-}
-
-func (c *Carver) tryPending() {
-	base := c.total - int64(len(c.buffer))
-	kept := c.pending[:0]
-	for _, candidate := range c.pending {
-		offset := int(candidate.absolute - base)
-		if offset < 0 || offset >= len(c.buffer) {
-			continue
-		}
-		if got := carveAtAnchor(c.buffer, offset, candidate.key, c.versions); got != nil {
-			c.consider(got)
-			continue
-		}
-		kept = append(kept, candidate)
-	}
-	c.pending = kept
-}
-
-func (c *Carver) consider(candidate *Config) {
-	if candidate == nil {
+	if len(s.pending) >= maxPendingAnchors {
 		return
 	}
-	if c.config == nil || keyPrecedes(candidate, c.config) {
-		c.config = candidate
+	s.pending = append(s.pending, candidate)
+}
+
+func (s *plainScanner) tryPending(versions map[uint16]string, final bool) {
+	base := s.total - int64(len(s.buffer))
+	kept := s.pending[:0]
+	for _, candidate := range s.pending {
+		if !final && candidate.absolute+maxPatchSize > s.total {
+			kept = append(kept, candidate)
+			continue
+		}
+		if *s.exhausted {
+			break
+		}
+		offset := int(candidate.absolute - base)
+		if offset < 0 || offset >= len(s.buffer) {
+			continue
+		}
+		first := offset - maxPatchSize
+		if first < 0 {
+			first = 0
+		}
+		last := offset + maxPatchSize
+		if last > len(s.buffer) {
+			last = len(s.buffer)
+		}
+		local := s.buffer[first:last]
+		if got := carveAtAnchor(local, offset-first, candidate.key, versions, s.workUsed, s.exhausted); got != nil {
+			got.absoluteStart += base + int64(first)
+			if s.config == nil || keyPrecedes(got, s.config) || (got.XORKey == s.config.XORKey && got.absoluteStart < s.config.absoluteStart) {
+				s.config = got
+			}
+		}
+	}
+	if *s.exhausted {
+		s.pending = nil
+	} else {
+		s.pending = kept
 	}
 }
 
@@ -275,7 +379,7 @@ func anchorKey(data []byte, pos int) (byte, bool) {
 	return key, true
 }
 
-func carveAtAnchor(raw []byte, anchor int, key byte, versions map[uint16]string) *Config {
+func carveAtAnchor(raw []byte, anchor int, key byte, versions map[uint16]string, work *int, exhausted *bool) *Config {
 	decoded := make([]byte, len(raw))
 	for i, value := range raw {
 		decoded[i] = value ^ key
@@ -285,13 +389,18 @@ func carveAtAnchor(raw []byte, anchor int, key byte, versions map[uint16]string)
 		first = 0
 	}
 	for start := first; start < anchor; start++ {
+		if *work >= maxCarveWork {
+			*exhausted = true
+			return nil
+		}
+		(*work)++
 		settings, maxIndex, terminated, complete := parseSettings(decoded, start)
 		if !complete || !terminated || len(settings) < 3 {
 			continue
 		}
 		anchorInPubkey := false
 		for i, setting := range settings {
-			if setting.Index == settingIndexPubKey && bytes.Contains(setting.Raw, rsaEncryptionOID[:]) {
+			if setting.Index == settingIndexPubKey && setting.Type == TypePtr && bytes.Contains(setting.Raw, rsaEncryptionOID[:]) {
 				valueStart := settingsValueOffset(decoded, start, i)
 				if anchor >= valueStart && anchor+len(rsaEncryptionOID) <= valueStart+len(setting.Raw) {
 					anchorInPubkey = true
@@ -310,7 +419,7 @@ func carveAtAnchor(raw []byte, anchor int, key byte, versions map[uint16]string)
 		}
 		frequency := byteFrequency(raw, key)
 		version := versionFor(maxIndex, versions)
-		return &Config{Settings: settings, MaxSettingIndex: maxIndex, Version: version, VersionAnnotation: versionAnnotation(maxIndex, version), PatchSize: patchSize, XORKey: key, fallbackFrequency: frequency}
+		return &Config{Settings: settings, MaxSettingIndex: maxIndex, Version: version, VersionAnnotation: versionAnnotation(maxIndex, version), PatchSize: patchSize, XORKey: key, fallbackFrequency: frequency, absoluteStart: int64(start)}
 	}
 	return nil
 }
@@ -338,97 +447,42 @@ func (c *Carver) Result() (*Config, bool) {
 	if !c.admitted {
 		return nil, false
 	}
-	c.tryPending()
-
-	if c.config == nil && c.total <= int64(maxRetainedWindow) {
-		if wrapped, invalid := findXorEncoded(bytes.Clone(c.buffer), c.total, c.versions); wrapped != nil {
-			c.config = wrapped
-		} else if invalid {
-			c.badWrapper = true
+	c.plain.tryPending(c.versions, true)
+	c.derived.tryPending(c.versions, true)
+	c.buffer = c.plain.buffer
+	if c.plain.config != nil {
+		c.config = c.plain.config
+	}
+	if c.config == nil && c.derived.config != nil {
+		for _, candidate := range c.wrappers {
+			configStart := c.derived.config.absoluteStart
+			configEnd := configStart + int64(c.derived.config.PatchSize)
+			valid, invalid := validateWrappedConfig(candidate, configStart, configEnd, c.total)
+			if valid {
+				c.config = c.derived.config
+				c.config.XorEncoded = true
+				break
+			}
+			if invalid {
+				c.reason = ReasonInvalidStage
+			}
 		}
 	}
 	if c.config == nil {
-		if c.badWrapper {
-			c.reason = ReasonInvalidStage
-		} else if c.total > int64(maxRetainedWindow) {
-			c.reason = ReasonOutOfScope
-		} else {
-			c.reason = ReasonNoAnchor
+		if c.workExhausted {
+			c.reason = ReasonWorkBudgetExhausted
+		} else if c.reason != ReasonInvalidStage {
+			if c.plain.hadAnchor || c.derived.hadAnchor {
+				c.reason = ReasonAnchorWithoutValidConfig
+			} else {
+				c.reason = ReasonNoAnchor
+			}
 		}
 		c.releaseLocked()
 		return nil, false
 	}
 	c.releaseLocked()
 	return c.config, true
-}
-
-func findDecodedConfig(raw []byte, key byte, versions map[uint16]string) *Config {
-	decoded := make([]byte, len(raw))
-	for i, value := range raw {
-		decoded[i] = value ^ key
-	}
-	for pos := 0; pos+len(rsaEncryptionOID) <= len(decoded); {
-		i := bytes.Index(decoded[pos:], rsaEncryptionOID[:])
-		if i < 0 {
-			return nil
-		}
-		anchor := pos + i
-		if got := carveAtAnchor(raw, anchor, key, versions); got != nil {
-			return got
-		}
-		pos = anchor + 1
-	}
-	return nil
-}
-
-func orderedKeys(window []byte) []byte {
-	keys := make([]byte, 0, 256)
-	keys = append(keys, defaultXORKeys[:]...)
-	keys = append(keys, fallbackOrder(window)...)
-	return keys
-}
-
-func findXorEncoded(raw []byte, total int64, versions map[uint16]string) (*Config, bool) {
-	invalid := false
-	limit := wrapperScanLimit
-	if len(raw)-wrapperHeaderSize < limit {
-		limit = len(raw) - wrapperHeaderSize + 1
-	}
-	if limit < 0 {
-		return nil, false
-	}
-	for offset := 0; offset < limit; offset++ {
-		nonce := raw[offset : offset+wrapperNonceSize]
-		sizeBytes := make([]byte, wrapperNonceSize)
-		for i := 0; i < wrapperNonceSize; i++ {
-			sizeBytes[i] = nonce[i] ^ raw[offset+wrapperNonceSize+i]
-		}
-		size := int64(binary.LittleEndian.Uint32(sizeBytes))
-		if size < wrapperMinimumSize {
-			continue
-		}
-		end := int64(offset+wrapperHeaderSize) + size
-		if end > total || total-end > wrapperMaximumSlack || end > int64(len(raw)) {
-			invalid = true
-			continue
-		}
-		start := offset + wrapperHeaderSize
-		decoded := make([]byte, int(size))
-		for i := range decoded {
-			prior := nonce[i%wrapperNonceSize]
-			if i >= wrapperNonceSize {
-				prior = raw[start+i-wrapperNonceSize]
-			}
-			decoded[i] = raw[start+i] ^ prior
-		}
-		for _, key := range orderedKeys(decoded) {
-			if got := findDecodedConfig(decoded, key, versions); got != nil {
-				got.XorEncoded = true
-				return got, invalid
-			}
-		}
-	}
-	return nil, invalid
 }
 
 func (c *Carver) Reason() Reason {
@@ -440,7 +494,7 @@ func (c *Carver) Reason() Reason {
 func (c *Carver) RetainedBytes() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return len(c.buffer)
+	return len(c.plain.buffer) + len(c.derived.buffer)
 }
 
 func (c *Carver) Close() {
