@@ -16,7 +16,7 @@ The anchor is DER rsaEncryption OID `06 09 2A 86 48 86 F7 0D 01 01 01` inside th
 
 Config patch sizes are `0x1000` through Cobalt Strike 4.8 and `0x1800` from 4.9; the reference maximum patch size is `0x1800`. [Reference: `beacon.py:491-496`; R-01b: `BeaconPatchSize`]
 
-The settings walk treats indices and types as opaque for discovery, advances by six header bytes plus the declared length, and stops on index zero. [Reference: `beacon.py:502-506`, `:518-548`; R-01b: `walk_settings`]
+The settings walk treats indices and types as opaque for discovery, advances by six header bytes plus the declared length, and stops on index zero. Discovery requires at least three walked entries and payload evidence around the candidate. [Reference: `beacon.py:502-506`, `:518-548`, `:618-625`; R-01b: `walk_settings`]
 
 ## XOR-encoded stage wrapper — reference facts
 
@@ -67,10 +67,10 @@ Required annotation: `max setting index N (≈ CS x.y per dissect.cobaltstrike v
 ## Design decisions — c2parser rules, not reference facts
 
 1. Decode SHORT and INT values as big-endian unsigned integers only when the declared length is exactly 2 or 4 bytes. For every other length, preserve raw bytes and set `unexpected_length`. PTR and other values remain raw. This is the R-01b value-width rule; it is deliberately tolerant rather than strict type/width validation. [R-01b: `Value width`]
-2. Try the three default XOR keys first. If none yields a valid anchored settings walk, try other byte keys in descending frequency of that byte in the retained candidate window, ties by ascending key value. Candidate acceptance requires the OID within a setting value and a structurally valid terminated walk. This deterministic order is an implementation choice, not a statement of reference behavior. The reference fallback instead ranks repeated four-byte equal-byte groups (`beacon.py:674-691`). This is an intentional, recorded divergence from the reference fallback order.
+2. Try the three default XOR keys first. If none yields a valid anchored settings walk, try other byte keys in descending frequency of that byte in the current candidate window, ties by ascending key value. Candidate acceptance requires the OID within a setting value and a structurally valid terminated walk. This deterministic order is an implementation choice, not a statement of reference behavior. The reference fallback instead ranks repeated four-byte equal-byte groups (`beacon.py:674-691`). This is an intentional, recorded divergence from the reference fallback order.
 3. At `Result()`, validate xorencoded candidates against the total number of bytes fed, using the retained bounded window for candidate bytes. This selects the R-01b streaming option that defers end-of-stream trailer validation until `Result()`. Never require MZ. [R-01b: `Streaming note`, `MZ check`]
 4. Do not implement 4.11 obfuscated wrappers, guardrails, or multi-byte XOR keys; report `NOT_CARVED` with a reason. [R-01b: `Still UNVERIFIED`; readiness review F3, Q-04]
-5. Retained input per carver is capped at three maximum patches (`3 × 0x1800` bytes); an independent concurrency limiter admits at most 32 carvers.
+5. Retained input per carver is capped at three maximum patches (`3 × 0x1800` bytes); an independent concurrency limiter admits at most 32 carvers. Use a rolling bounded window, scan incoming candidate anchors as chunks arrive, and keep only bounded pending-anchor metadata. The 32-carver limit and pending-metadata cap are local resource decisions. [Owner order: Q-06 bounds]
 
 ## Citations and unresolved facts
 
