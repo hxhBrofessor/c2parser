@@ -34,6 +34,22 @@ func TestNXDomainSpreadFindingOrder(t *testing.T) {
 		return strings.Join(titles, "\n")
 	}
 	_, results := analyzeRuns(t, s, Config{}, 10)
+	// The fixture must really produce ties: every NXDOMAIN-spread finding
+	// has the same score, so only iteration order could separate them.
+	var scores []float64
+	for _, f := range results[0].Findings {
+		if f.Category == CatDGA {
+			scores = append(scores, f.Score)
+		}
+	}
+	if len(scores) < 2 {
+		t.Fatalf("fixture: %d NXDOMAIN-spread findings, want >= 2", len(scores))
+	}
+	for _, sc := range scores[1:] {
+		if sc != scores[0] {
+			t.Fatalf("fixture: NXDOMAIN-spread scores not all equal: %v", scores)
+		}
+	}
 	first := order(results[0])
 	if strings.Count(first, "\n") < 1 {
 		t.Fatalf("fixture: want >= 2 NXDOMAIN-spread findings, got %q", first)
