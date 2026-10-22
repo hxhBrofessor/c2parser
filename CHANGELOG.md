@@ -4,6 +4,50 @@ Default output is the `-timing v1` engine. Entries marked **[default]**
 change what a plain `c2parser capture.pcap` run reports; everything else
 only affects `-timing v2` or adds new output.
 
+## v11.0 — release (v11a + v11b)
+CLI version `11.0` is reported as `c2parser 11.0`. v11.0 contains the v11a
+changes below plus the v11b work summarized here. Behavior-oriented C2
+heuristics and compatibility signals remain heuristic: a high or critical
+score, or a framework profile match, is not confirmed framework attribution.
+
+**Gate A: PASS** for v11.0 (owner disposition
+`1bb3aedd403d29f90460440db84b626edddb49035d57ade06579865527fe3158`,
+2026-10-21). This replaces the v11a Gate A waiver for v11.0; that waiver
+applied to v11a only and does not carry forward. On the four authentic lab
+captures, G-A1 (capture fingerprint contract), G-A2 (33/33 required lab tests,
+including all 16 capture/engine/Sigma cells, with zero skips) and G-A3 (lab CLI
+diff: v10.0 Critical findings preserved; v11a → v11b empty register; v10.0 →
+v11b changes owner-registered) passed with no waivers. The only v10.0 → v11b
+lab finding changes are the v11a signals `length_residue` and
+`uri_shape:fixed-uri` (`-timing v2`) added to an HTTP C2 finding; its score
+and severity are unchanged.
+
+- **Framework profile registry (WS-3).** An embedded, strictly validated
+  `data/framework-fingerprints.yaml` with per-field-group evidence and source
+  records. The Covenant, Merlin, PoshC2 and Cobalt Strike HTTP defaults and
+  six static certificate identities moved from code tables into the
+  registry. Each migration was frozen against the v11a behavior first, and
+  detection output is unchanged.
+- **Profile and evidence contract hardening (B-3.4).** The loader rejects
+  YAML aliases, anchors, custom tags, duplicate and unknown keys, and matcher
+  items outside the registered grammars. It enforces evidence and source
+  rules, certificate registry ownership and HTTP weight validation. The PoshC2
+  D-07 JSON evidence terminators are repaired.
+- **Stress and scale harness.** The stress gate compares against a stored
+  v10.0 baseline, and the scale gate compares against v10.0. Darwin peak-RSS
+  units are corrected (macOS reports bytes, not KB).
+- **Tests.** `FuzzParseProfiles` fuzzes the profile loader (test-only).
+- **Known issues (fixed in v11.1).**
+  - **GA3-D1:** with `-timing v2`, the order of `timing_series` entries is
+    not reproducible between runs, because DNS series are emitted in Go map
+    order. Findings are unaffected in all lab runs. Present since v10.0 or
+    earlier.
+  - **GA3-D2:** with `-timing v2`, `smb_pipe` timing entries can repeat with
+    the same (site, key) when one named pipe appears on several connections.
+    The copies are identical, and findings are unaffected. Present in all
+    versions.
+- WS-4 (Cobalt Strike configuration carving) is not part of v11.0.
+
 ## v11a — unreleased (v11.0 is tagged after v11b)
 Candidate CLI version `11a` is reported as `c2parser 11a`. Behavior-oriented C2 heuristics and compatibility signals remain heuristic: a high or critical score is not confirmed framework attribution. On the 39 v10 corpus scenarios, `-timing v1` output is byte-identical to v10.0 except `shape-smb-pipe-framed` (J-E2 owner-approved scoped exception). The full 45-scenario, two-engine comparison has four owner-approved scoped dispositions (J-E1 for two v11a-added scenarios and J-E2 for the two SMB comparisons); this is not an unqualified regression PASS. See `docs/eval/v11-synthetic.md` for the four-row register.
 Separately, all 39 shared synthetic PCAPs were byte-identical when generated
