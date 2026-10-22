@@ -20,7 +20,8 @@ const (
 	wrapperMaximumSlack  = 256
 	maxConcurrentCarvers = 32
 	maxPendingAnchors    = 128
-	maxCarveWork         = 8192
+	maxAnchorEvaluations = 32
+	maxCarveWork         = maxAnchorEvaluations * maxPatchSize
 )
 
 // Default key values and OID bytes are cited in FORMAT.md, "Anchor, patch sizes, and XOR keys".
@@ -93,36 +94,38 @@ type wrapperCandidate struct {
 }
 
 type plainScanner struct {
-	buffer    []byte
-	total     int64
-	pending   []anchorCandidate
-	config    *Config
-	hadAnchor bool
-	workUsed  *int
-	exhausted *bool
+	buffer      []byte
+	total       int64
+	pending     []anchorCandidate
+	config      *Config
+	hadAnchor   bool
+	workUsed    *int
+	evaluations *int
+	exhausted   *bool
 }
 
 // Carver keeps only a bounded rolling input window and stores parsed results, never payload logs.
 type Carver struct {
-	mu            sync.Mutex
-	options       Options
-	versions      map[uint16]string
-	limiter       *Limiter
-	admitted      bool
-	closed        bool
-	total         int64
-	buffer        []byte // compatibility view of the plain scanner's bounded window
-	plain         plainScanner
-	derived       plainScanner
-	derivedTail   [wrapperNonceSize]byte
-	derivedSeen   int
-	headerPrefix  []byte
-	headerScanned int
-	wrappers      []wrapperCandidate
-	config        *Config
-	reason        Reason
-	workUsed      int
-	workExhausted bool
+	mu                sync.Mutex
+	options           Options
+	versions          map[uint16]string
+	limiter           *Limiter
+	admitted          bool
+	closed            bool
+	total             int64
+	buffer            []byte // compatibility view of the plain scanner's bounded window
+	plain             plainScanner
+	derived           plainScanner
+	derivedTail       [wrapperNonceSize]byte
+	derivedSeen       int
+	headerPrefix      []byte
+	headerScanned     int
+	wrappers          []wrapperCandidate
+	config            *Config
+	reason            Reason
+	workUsed          int
+	anchorEvaluations int
+	workExhausted     bool
 }
 
 func New(opts Options) *Carver {
@@ -146,6 +149,7 @@ func New(opts Options) *Carver {
 	c.derived.buffer = make([]byte, 0, maxRetainedWindow)
 	c.buffer = c.plain.buffer
 	c.plain.workUsed, c.derived.workUsed = &c.workUsed, &c.workUsed
+	c.plain.evaluations, c.derived.evaluations = &c.anchorEvaluations, &c.anchorEvaluations
 	c.plain.exhausted, c.derived.exhausted = &c.workExhausted, &c.workExhausted
 	// Four prefix bytes preserve absolute positions in the derived stream.
 	c.derived.feed(make([]byte, wrapperNonceSize), versions, false)
@@ -288,6 +292,10 @@ func (s *plainScanner) tryPending(versions map[uint16]string, final bool) {
 		if *s.exhausted {
 			break
 		}
+		if *s.evaluations >= maxAnchorEvaluations {
+			*s.exhausted = true
+			break
+		}
 		offset := int(candidate.absolute - base)
 		if offset < 0 || offset >= len(s.buffer) {
 			continue
@@ -301,12 +309,15 @@ func (s *plainScanner) tryPending(versions map[uint16]string, final bool) {
 			last = len(s.buffer)
 		}
 		local := s.buffer[first:last]
-		if got := carveAtAnchor(local, offset-first, candidate.key, versions, s.workUsed, s.exhausted); got != nil {
+		*s.evaluations++
+		anchorWork := 0
+		if got := carveAtAnchor(local, offset-first, candidate.key, versions, &anchorWork, s.exhausted); got != nil {
 			got.absoluteStart += base + int64(first)
 			if s.config == nil || keyPrecedes(got, s.config) || (got.XORKey == s.config.XORKey && got.absoluteStart < s.config.absoluteStart) {
 				s.config = got
 			}
 		}
+		*s.workUsed += anchorWork
 	}
 	if *s.exhausted {
 		s.pending = nil
@@ -389,7 +400,7 @@ func carveAtAnchor(raw []byte, anchor int, key byte, versions map[uint16]string,
 		first = 0
 	}
 	for start := first; start < anchor; start++ {
-		if *work >= maxCarveWork {
+		if *work >= maxPatchSize {
 			*exhausted = true
 			return nil
 		}
@@ -454,6 +465,7 @@ func (c *Carver) Result() (*Config, bool) {
 		c.config = c.plain.config
 	}
 	if c.config == nil && c.derived.config != nil {
+		invalidWrapper := false
 		for _, candidate := range c.wrappers {
 			configStart := c.derived.config.absoluteStart
 			configEnd := configStart + int64(c.derived.config.PatchSize)
@@ -464,8 +476,11 @@ func (c *Carver) Result() (*Config, bool) {
 				break
 			}
 			if invalid {
-				c.reason = ReasonInvalidStage
+				invalidWrapper = true
 			}
+		}
+		if c.config == nil && invalidWrapper {
+			c.reason = ReasonInvalidStage
 		}
 	}
 	if c.config == nil {
