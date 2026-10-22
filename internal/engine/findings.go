@@ -500,7 +500,10 @@ func (e *Engine) scoreSMB(sc *scorer) {
 						Detail: fmt.Sprintf("%s written / %s read through the pipe (%d writes, %d reads, %d transceives)", human(f.WriteBytes), human(f.ReadBytes), f.Writes, f.Reads, f.Transceives)})
 				}
 				bt, bs, bp := burstify(f.opT, f.opS, e.cfg.BurstGap.Seconds())
-				psigs, _ := e.beacon("smb_pipe", fmt.Sprintf("pipe|%s|%s|%s", c.client, c.server, pn), ModelP2P, bt, bs, bp, 0.5, "pipe I/O bursts")
+				// Series key = one TCP connection: both AddrPorts plus the
+				// connection's first frame, which separates a reused 4-tuple
+				// (FIX-D2/D2b). The finding key above stays per address pair.
+				psigs, _ := e.beacon("smb_pipe", fmt.Sprintf("pipe|%s|%s|%s|%d", c.client, c.server, pn, c.firstFrame), ModelP2P, bt, bs, bp, 0.5, "pipe I/O bursts")
 				for _, s := range psigs {
 					a.add(s)
 				}
