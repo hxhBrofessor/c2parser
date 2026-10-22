@@ -90,21 +90,26 @@ func TestWS5EmbeddedRuleHygiene(t *testing.T) {
 		// tracking parameters in URLs
 		regexp.MustCompile(`utm_[a-z]+=`),
 	}
-	ents, err := os.ReadDir(builtinDir)
-	if err != nil {
-		t.Fatalf("read builtin dir: %v", err)
-	}
-	for _, e := range ents {
-		if e.IsDir() || filepath.Ext(e.Name()) != ".yml" {
-			continue
-		}
-		b, err := os.ReadFile(filepath.Join(builtinDir, e.Name()))
+	// S2-2: scan both the embedded built-in rules and the public, non-embedded
+	// docs/sigma-examples/ (just as public a surface).
+	dirs := []string{builtinDir, "../../docs/sigma-examples"}
+	for _, dir := range dirs {
+		ents, err := os.ReadDir(dir)
 		if err != nil {
-			t.Fatalf("read %s: %v", e.Name(), err)
+			t.Fatalf("read %s: %v", dir, err)
 		}
-		for i, re := range denylist {
-			if re.Match(b) {
-				t.Errorf("embedded rule %s matches hygiene denylist pattern #%d (text withheld)", e.Name(), i)
+		for _, e := range ents {
+			if e.IsDir() || filepath.Ext(e.Name()) != ".yml" {
+				continue
+			}
+			b, err := os.ReadFile(filepath.Join(dir, e.Name()))
+			if err != nil {
+				t.Fatalf("read %s/%s: %v", dir, e.Name(), err)
+			}
+			for i, re := range denylist {
+				if re.Match(b) {
+					t.Errorf("rule %s/%s matches hygiene denylist pattern #%d (text withheld)", dir, e.Name(), i)
+				}
 			}
 		}
 	}
