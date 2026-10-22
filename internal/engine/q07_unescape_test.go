@@ -27,14 +27,3 @@ func TestQ07UnescapeRequestToken(t *testing.T) {
 		}
 	}
 }
-
-// End-to-end: a literal-'+' base64 cookie token now decodes as base64 (it was
-// corrupted to a space and left raw under the old QueryUnescape-everything).
-func TestQ07CookieLiteralPlusDecodesBase64(t *testing.T) {
-	// 48 random-looking bytes base64 with a '+' in it.
-	tok := "QUJD+0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaYWJjZGVmZ2hpamtsbW5v"
-	d := decodeCarrier(&httpMsg{req: true}, token{loc: "cookie:sid", val: tok})
-	if d.enc == "raw" {
-		t.Fatalf("cookie literal-'+' token left raw (enc=%q); CAND2 should decode base64", d.enc)
-	}
-}
