@@ -16,8 +16,12 @@ import (
 // smbPipeConnNoFinD2R emits the same minimal SMB named-pipe exchange as
 // smbPipeConn but deliberately omits FIN/RST, for the bounded R1-08 case.
 func smbPipeConnNoFinD2R(s *synth, client string, cport uint16, server, pipeName string, start time.Time, payloads ...[]byte) {
+	smbPipeConnNoFinWithISND2R(s, client, cport, server, pipeName, start, 1000, 9000, payloads...)
+}
+
+func smbPipeConnNoFinWithISND2R(s *synth, client string, cport uint16, server, pipeName string, start time.Time, clientISN, serverISN uint32, payloads ...[]byte) {
 	ts := start
-	sess := s.tcp(ts, client, cport, server, 445)
+	sess := s.b.TCPWithISN(ts, client, cport, server, 445, clientISN, serverISN)
 	step := func(d time.Duration, fromClient bool, msg []byte) {
 		ts = ts.Add(d)
 		sess.Send(ts, fromClient, nb(msg), 1400)
@@ -59,28 +63,22 @@ func smbPipeConnNoFinD2R(s *synth, client string, cport uint16, server, pipeName
 // lands, this must become a uniqueness test (2 series, 2 distinct keys,
 // still 1 pipe finding) and these assertions must change with it.
 func TestR108FINlessReuseCharacterization(t *testing.T) {
-	for _, gap := range []time.Duration{45 * time.Second, 5 * time.Minute} {
-		t.Run(gap.String(), func(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		isn  uint32
+	}{{"same-ISN", 1000}, {"new-ISN-above-high-water", 100000}} {
+		t.Run(tc.name, func(t *testing.T) {
 			s := newSynth(t)
 			payloads := make([][]byte, 8)
 			for i := range payloads {
-				payloads[i] = randB(64)
+				payloads[i] = bytes.Repeat([]byte{byte(i + 1)}, 64)
 			}
-			smbPipeConnNoFinD2R(s, "10.7.0.5", 50001, "10.7.0.11", "reuse_pipe", s.now, payloads...)
-			smbPipeConnNoFinD2R(s, "10.7.0.5", 50001, "10.7.0.11", "reuse_pipe", s.now.Add(gap), payloads...)
+			smbPipeConnNoFinWithISND2R(s, "10.7.0.5", 50001, "10.7.0.11", "reuse_pipe", s.now, 1000, 9000, payloads...)
+			smbPipeConnNoFinWithISND2R(s, "10.7.0.5", 50001, "10.7.0.11", "reuse_pipe", s.now.Add(5*time.Minute), tc.isn, tc.isn+8000, payloads...)
 			res := s.analyze(Config{TimingV2: true, RecordConns: true})
 			ss := pipeSeries(res)
-			wantConns := 2
-			if gap == 45*time.Second {
-				wantConns = 1 // below the idle timeout; this remains one connection
-			}
-			if len(res.Conns) != wantConns {
-				t.Fatalf("TCP connection records=%d, want %d", len(res.Conns), wantConns)
-			}
-			// R1-08 holds the reassembly stream on the first connection, so
-			// the second connection has no SMB timing observation to collide.
-			if len(ss) != 1 {
-				t.Fatalf("smb_pipe series=%d, want 1 under R1-08", len(ss))
+			if len(res.Conns) != 2 || len(ss) != 2 || distinctKeys(ss) != 2 {
+				t.Fatalf("TCP connections=%d, smb_pipe series=%d distinct keys=%d, want 2/2/2", len(res.Conns), len(ss), distinctKeys(ss))
 			}
 			pipes := 0
 			for _, f := range res.Findings {
@@ -89,9 +87,8 @@ func TestR108FINlessReuseCharacterization(t *testing.T) {
 				}
 			}
 			if pipes != 1 {
-				t.Fatalf("pipe findings=%d, want 1 under R1-08", pipes)
+				t.Fatalf("pipe findings=%d, want 1 under address-only finding aggregation", pipes)
 			}
-			t.Logf("R1-08 characterization: gap=%s TCP connections=%d, smb_pipe series=%d, pipe findings=%d; no-FIN second L7 observation is absent (FIX-REUSE open)", gap, len(res.Conns), len(ss), pipes)
 		})
 	}
 }

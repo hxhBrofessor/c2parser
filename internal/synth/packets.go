@@ -152,7 +152,14 @@ type TCP struct {
 
 // TCP opens a connection with a three-way handshake at ts.
 func (b *Builder) TCP(ts time.Time, cli string, cport uint16, srv string, sport uint16) *TCP {
-	t := &TCP{b: b, Cli: cli, Srv: srv, CPort: cport, SPort: sport, cseq: 1000, sseq: 9000}
+	return b.TCPWithISN(ts, cli, cport, srv, sport, 1000, 9000)
+}
+
+// TCPWithISN opens a TCP connection with explicit initial sequence numbers.
+// This is intended for deterministic synthetic fixtures, including tuple
+// reuse where the assembler's old sequence high-water mark is under test.
+func (b *Builder) TCPWithISN(ts time.Time, cli string, cport uint16, srv string, sport uint16, clientISN, serverISN uint32) *TCP {
+	t := &TCP{b: b, Cli: cli, Srv: srv, CPort: cport, SPort: sport, cseq: clientISN, sseq: serverISN}
 	t.Seg(ts, true, nil, true, false, false)
 	t.Seg(ts.Add(time.Millisecond), false, nil, true, true, false)
 	t.Seg(ts.Add(2*time.Millisecond), true, nil, false, true, false)
