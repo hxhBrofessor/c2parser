@@ -317,7 +317,11 @@ func (e *Engine) packet(p pcapio.Packet) {
 		d := netip.AddrPortFrom(dst, uint16(tl.DstPort))
 		e.observeTCP(ts, s, d, tl)
 		ctx := &pktCtx{ci: gopacket.CaptureInfo{Timestamp: ts, CaptureLength: len(p.Data), Length: p.OrigLen}, frame: e.frame}
-		e.asm.AssembleWithContext(nl.NetworkFlow(), tl, ctx)
+		nf := nl.NetworkFlow()
+		if c := e.tcp[mkKey(s, d)]; c != nil && c.reuseFrame != 0 {
+			nf = reuseReassemblyFlow(nf, c.reuseFrame)
+		}
+		e.asm.AssembleWithContext(nf, tl, ctx)
 		if e.frame%20000 == 0 {
 			e.asm.FlushCloseOlderThan(ts.Add(-2 * time.Minute))
 			e.sweepConns(ts.Add(-2 * time.Minute))
@@ -514,6 +518,7 @@ type tcpConn struct {
 	client, server netip.AddrPort
 	start, last    time.Time
 	firstFrame     int64
+	reuseFrame     int64 // capture frame starting this tuple's isolated reassembly generation; zero for the first generation
 	closed         bool
 	finished       bool
 	c2s, s2c       dirState
@@ -559,12 +564,17 @@ func (e *Engine) observeTCP(ts time.Time, src, dst netip.AddrPort, t *layers.TCP
 	k := mkKey(src, dst)
 	c := e.tcp[k]
 	syn := t.SYN && !t.ACK
+	reused := false
 	if c != nil && syn && (c.closed || ts.Sub(c.last) > 30*time.Second) {
 		e.finishConn(c) // 4-tuple reused for a new connection
 		c = nil
+		reused = true
 	}
 	if c == nil {
 		c = &tcpConn{start: ts, firstFrame: e.frame}
+		if reused {
+			c.reuseFrame = e.frame
+		}
 		switch {
 		case syn:
 			c.client, c.server = src, dst
@@ -775,6 +785,16 @@ func endpointAddrPort(n, t gopacket.Endpoint) netip.AddrPort {
 		port = uint16(raw[0])<<8 | uint16(raw[1])
 	}
 	return netip.AddrPortFrom(a.Unmap(), port)
+}
+
+// reuseReassemblyFlow gives a reused TCP connection its own assembler key.
+// EndpointType is an int64 and, unlike Endpoint.Raw, has no address-size
+// limit, so the unique capture frame can distinguish the flow without
+// changing either endpoint's original IP bytes. The negative type namespace
+// is private to this assembler; streamFactory uses Raw() to recover real IPs.
+func reuseReassemblyFlow(flow gopacket.Flow, frame int64) gopacket.Flow {
+	src, dst := flow.Endpoints()
+	return gopacket.NewFlow(gopacket.EndpointType(-frame), src.Raw(), dst.Raw())
 }
 
 func (f *streamFactory) New(netFlow, tcpFlow gopacket.Flow, _ *layers.TCP, _ reassembly.AssemblerContext) reassembly.Stream {

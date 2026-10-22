@@ -2,8 +2,12 @@ package engine
 
 import (
 	"bytes"
+	"net/netip"
 	"testing"
 	"time"
+
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
 )
 
 func TestReuseHTTPParsesSecondRequest(t *testing.T) {
@@ -59,5 +63,22 @@ func TestReuseDeterminismV1AndV2(t *testing.T) {
 		if cfg.TimingV2 && (len(pipeSeries(results[0])) != 2 || distinctKeys(pipeSeries(results[0])) != 2) {
 			t.Fatalf("timing v2 output lost reuse observations: series=%d distinct=%d", len(pipeSeries(results[0])), distinctKeys(pipeSeries(results[0])))
 		}
+	}
+}
+
+func TestReuseReassemblyFlowPreservesIPv6Endpoints(t *testing.T) {
+	src := netip.MustParseAddr("fd00::5")
+	dst := netip.MustParseAddr("fd00::11")
+	flow := gopacket.NewFlow(layers.EndpointIPv6, src.AsSlice(), dst.AsSlice())
+	a := reuseReassemblyFlow(flow, 17)
+	b := reuseReassemblyFlow(flow, 29)
+	if a.EndpointType() == b.EndpointType() {
+		t.Fatal("reused generations share a reassembly flow identity")
+	}
+	if got := netip.AddrFrom16([16]byte(a.Src().Raw())); got != src {
+		t.Fatalf("virtual source endpoint changed IPv6 address: %s, want %s", got, src)
+	}
+	if got := netip.AddrFrom16([16]byte(a.Dst().Raw())); got != dst {
+		t.Fatalf("virtual destination endpoint changed IPv6 address: %s, want %s", got, dst)
 	}
 }

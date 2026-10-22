@@ -14,7 +14,7 @@ import (
 )
 
 // smbPipeConnNoFinD2R emits the same minimal SMB named-pipe exchange as
-// smbPipeConn but deliberately omits FIN/RST, for the bounded R1-08 case.
+// smbPipeConn but deliberately omits FIN/RST.
 func smbPipeConnNoFinD2R(s *synth, client string, cport uint16, server, pipeName string, start time.Time, payloads ...[]byte) {
 	smbPipeConnNoFinWithISND2R(s, client, cport, server, pipeName, start, 1000, 9000, payloads...)
 }
@@ -56,12 +56,8 @@ func smbPipeConnNoFinWithISND2R(s *synth, client string, cport uint16, server, p
 	}
 }
 
-// RV-1: R1-08 characterization, not a uniqueness test. A FIN-less 4-tuple
-// reused after a gap gets no second SMB observation today (R1-08: the
-// reassembly stream stays on the first connection), so the counts below pin
-// current behavior: 1 smb_pipe series and 1 pipe finding. When FIX-REUSE
-// lands, this must become a uniqueness test (2 series, 2 distinct keys,
-// still 1 pipe finding) and these assertions must change with it.
+// The former R1-08 characterization now checks uniqueness for both a reused
+// ISN and an ISN above the old sequence high-water mark.
 func TestR108FINlessReuseCharacterization(t *testing.T) {
 	for _, tc := range []struct {
 		name string
