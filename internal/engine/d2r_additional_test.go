@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/netip"
 	"reflect"
 	"strings"
@@ -51,7 +52,13 @@ func smbPipeConnNoFinD2R(s *synth, client string, cport uint16, server, pipeName
 	}
 }
 
-func TestD2R05FINlessTimeoutReuse(t *testing.T) {
+// RV-1: R1-08 characterization, not a uniqueness test. A FIN-less 4-tuple
+// reused after a gap gets no second SMB observation today (R1-08: the
+// reassembly stream stays on the first connection), so the counts below pin
+// current behavior: 1 smb_pipe series and 1 pipe finding. When FIX-REUSE
+// lands, this must become a uniqueness test (2 series, 2 distinct keys,
+// still 1 pipe finding) and these assertions must change with it.
+func TestR108FINlessReuseCharacterization(t *testing.T) {
 	for _, gap := range []time.Duration{45 * time.Second, 5 * time.Minute} {
 		t.Run(gap.String(), func(t *testing.T) {
 			s := newSynth(t)
@@ -72,10 +79,19 @@ func TestD2R05FINlessTimeoutReuse(t *testing.T) {
 			}
 			// R1-08 holds the reassembly stream on the first connection, so
 			// the second connection has no SMB timing observation to collide.
-			if len(ss) != 1 || distinctKeys(ss) != 1 {
-				t.Fatalf("smb_pipe series=%d distinct keys=%d, want 1/1 under R1-08", len(ss), distinctKeys(ss))
+			if len(ss) != 1 {
+				t.Fatalf("smb_pipe series=%d, want 1 under R1-08", len(ss))
 			}
-			t.Logf("D2R-05: gap=%s TCP connections=%d, smb_pipe series=%d, distinct keys=%d; no-FIN second L7 observation is absent when timeout creates a new connection (R1-08)", gap, len(res.Conns), len(ss), distinctKeys(ss))
+			pipes := 0
+			for _, f := range res.Findings {
+				if f.Category == CatPipe {
+					pipes++
+				}
+			}
+			if pipes != 1 {
+				t.Fatalf("pipe findings=%d, want 1 under R1-08", pipes)
+			}
+			t.Logf("R1-08 characterization: gap=%s TCP connections=%d, smb_pipe series=%d, pipe findings=%d; no-FIN second L7 observation is absent (FIX-REUSE open)", gap, len(res.Conns), len(ss), pipes)
 		})
 	}
 }
@@ -90,10 +106,29 @@ func TestD2R09TimingContentEqualModuloKey(t *testing.T) {
 	smbPipeConn(s, "10.7.0.5", 50001, "10.7.0.11", "reuse_pipe", s.now.Add(5*time.Minute), payloads...)
 	_, results := analyzeRuns(t, s, Config{TimingV2: true}, 10)
 	var baseline []byte
+	var times0 [][]float64
 	for run, res := range results {
 		ss := pipeSeries(res)
 		if len(ss) != 2 || distinctKeys(ss) != 2 {
 			t.Fatalf("run %d: series=%d distinct keys=%d, want 2/2", run, len(ss), distinctKeys(ss))
+		}
+		// RV-2: times are unexported, so the JSON below does not cover
+		// them. Compare the event times exactly, in integer nanoseconds:
+		// the second connection's events are the first's plus the 5 min
+		// start offset, and each series repeats bit for bit across runs.
+		t0, t1 := ss[0].Times(), ss[1].Times()
+		if len(t0) == 0 || len(t0) != len(t1) {
+			t.Fatalf("run %d: event counts %d vs %d", run, len(t0), len(t1))
+		}
+		for i := range t0 {
+			if d := math.Round(t1[i]*1e9) - math.Round(t0[i]*1e9); d != float64(5*time.Minute) {
+				t.Fatalf("run %d: event %d at %v vs %v, want an offset of exactly 5m", run, i, t0[i], t1[i])
+			}
+		}
+		if run == 0 {
+			times0 = [][]float64{t0, t1}
+		} else if !reflect.DeepEqual([][]float64{t0, t1}, times0) {
+			t.Fatalf("run %d: event times differ from run 0", run)
 		}
 		var content [][]byte
 		for _, series := range ss {
