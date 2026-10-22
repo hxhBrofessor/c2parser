@@ -500,7 +500,7 @@ func (e *Engine) scoreSMB(sc *scorer) {
 						Detail: fmt.Sprintf("%s written / %s read through the pipe (%d writes, %d reads, %d transceives)", human(f.WriteBytes), human(f.ReadBytes), f.Writes, f.Reads, f.Transceives)})
 				}
 				bt, bs, bp := burstify(f.opT, f.opS, e.cfg.BurstGap.Seconds())
-				psigs, _ := e.beacon("smb_pipe", fmt.Sprintf("pipe|%s|%s|%s", c.client.Addr(), c.server.Addr(), pn), ModelP2P, bt, bs, bp, 0.5, "pipe I/O bursts")
+				psigs, _ := e.beacon("smb_pipe", fmt.Sprintf("pipe|%s|%s|%s", c.client, c.server, pn), ModelP2P, bt, bs, bp, 0.5, "pipe I/O bursts")
 				for _, s := range psigs {
 					a.add(s)
 				}
