@@ -18,11 +18,11 @@ profile or rule match is not confirmed framework attribution.
   non-authoritative examples — not compiled in; load with `-sigma`/`C2PARSER_SIGMA`.
   The kept rule's metadata was corrected (no unit or person strings; references
   repointed) without changing its id.
-- **[default] WS-4 / S1F2 — passive configuration carver.** The standalone
+- **WS-4 / S1F2 — passive configuration carver.** The standalone
   `internal/csconfig` carver supports plain and xorencoded stages, single-byte
   keys, patch lengths `0x1000` and `0x1800`, and approximate version annotations
   (estimates, not attribution).
-- **[default] WS-4 / B-4.4 — HTTP response tap (released, S2a).** A passive tap
+- **[default] WS-4 / B-4.4 — HTTP response tap.** A passive tap
   with three admission paths (MZ at offset 0; `application/octet-stream` >= 64 KiB;
   a validated xorencoded header) and a per-response 4 MiB feed cap. It emits
   `cs_config:beacon_config` (weight 0.60) only after structural validation and
@@ -35,20 +35,21 @@ profile or rule match is not confirmed framework attribution.
   request-token parsing may still surface additional carrier detections. The
   diagnostic `-timing v2` `smb_pipe` key grammar remains documented.
 
-### Accepted-change register (v11.1 -> v11.2) — OA-1
+### Accepted-change register (v11.1 -> v11.2)
 
 The only intended output deltas versus v11.1 are:
 
-1. **AC-1 (Sigma set):** no corpus change (no built-in rule fires); on the Gate A
-   lab, exactly the 6 Havoc C2 findings (cap0/cap1/cap3 x v1/v2) differ in text
-   only — the rule title in the signal detail and the renamed rule file in the
-   evidence; score, severity, signal names and weights are identical.
+1. **AC-1 (Sigma set):** no change on the synthetic corpus (no built-in rule
+   fires); on the project's private lab captures, findings that match the built-in
+   rule change in text only — the rule title in the signal detail and the renamed
+   rule file in the evidence; score, severity, signal names and weights are
+   identical.
 2. **AC-2 (B-4.4 tap):** no corpus or lab change (no CS config present); a new
    `cs_config:beacon_config` signal/finding appears only on inputs that carry a
    sufficient carved CS configuration.
 3. **AC-3 (VA-0):** test/eval harness only; zero FULL output change.
-4. **AC-4 (version/docs):** the binary differs from the v11.1 build only by the
-   version string, plus docs/CHANGELOG/release-notes.
+4. **AC-4 (version/docs):** version string 11.2 and documentation; no other code
+   change beyond AC-1 to AC-3.
 
 Any other output delta is a regression.
 
@@ -68,10 +69,10 @@ Any other output delta is a regression.
   (v2). A synthetic observation, not a measured false-positive rate.
 - **B-4.4:** no decompression; xorencoded admission requires a `Content-Length`;
   4.11 obfuscation, guardrails and multi-byte keys are `NOT_CARVED`.
-- **VA-0 OPEN-1:** mixed signals are suppressed wholesale in BLIND; neutral
-  sanitization remains open.
-- **VA-0 OPEN-5:** surviving generic evidence may retain framework fingerprint
-  bytes; content-level sanitization remains open.
+- **Framework-blind evaluation (mixed signals):** mixed signals are suppressed
+  wholesale; sanitizing a mixed signal while proving neutral behavior remains open.
+- **Framework-blind evaluation (generic evidence):** surviving generic evidence
+  may retain framework fingerprint bytes; content-level sanitization remains open.
 - No vendor-agnostic performance claim; G-VA is pending.
 
 A profile or rule match is not confirmed framework attribution.
