@@ -20,7 +20,29 @@ import (
 
 // evlinkAllow: "funcName|callee|tag" -> justification. tag is the first string
 // literal argument for evidence (the format string), or "frames" for frames.
-var evlinkAllow = map[string]string{}
+// Every entry is a GENERIC observed-data companion line (S1b audit, design
+// §5b): it names no framework — framework attribution is carried only by the
+// suppressed signal's Detail. The two non-generic framework *frame* sites were
+// converted to framesFrom in S1a and so never reach this guard.
+var evlinkAllow = map[string]string{
+	"scoreBehavior|evidence|SNI: %s":                                                   "observed TLS SNI (data), not a framework name",
+	"scoreBehavior|evidence|%d connections, %s up, %s down, longest %s":                "observed channel volume",
+	"scoreBehavior|evidence|TLS: JA3 %s, JA4 %s, SNI %s":                               "observed TLS fingerprints/SNI (data)",
+	"scoreBehavior|frames|frames":                                                      "channel first-frame activity marker",
+	"scoreCarriers|evidence|WebSocket: %d client / %d server messages, %s up, %s down": "observed WebSocket volume",
+	"scoreCarriers|frames|frames":                                                      "carrier activity frames",
+	"scoreDNS|evidence|longest names: %s":                                              "observed DNS query names (data, not a framework label)",
+	"scoreDNS|evidence|examples: %s":                                                   "observed DNS names (data)",
+	"scoreDNS|frames|frames":                                                           "DNS first-frame activity marker",
+	"scoreHTTP|evidence|%d requests / %d responses; %s up, %s down":                    "observed HTTP volume",
+	"scoreHTTP|evidence|User-Agent: %s":                                                "observed UA string; framework attribution via suppressed hdr:/default_profile signals (content-level default-UA sanitization tracked OPEN-5)",
+	"scoreHTTP|evidence|methods: %s; URIs: %s":                                         "observed methods/URIs (data)",
+	"scoreHTTP|frames|frames":                                                          "HTTP first/response activity frames",
+	"scoreRawStreams|evidence|%d connections, %s up, %s down":                          "observed raw-stream volume",
+	"scoreRawStreams|frames|frames":                                                    "raw-stream activity frames",
+	"scoreSMB|evidence|SMB session authenticated as: %s":                               "observed SMB authenticated user (session fact), not a framework name",
+	"scoreSMB|frames|frames":                                                           "pipe open/first activity frames; framework magic frames are the converted framesFrom site",
+}
 
 // familyPrefixesNonGeneric are the registered dynamic families that can carry a
 // non-generic class; a construction "<prefix>" + expr triggers the guard.
