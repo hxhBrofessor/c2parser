@@ -442,3 +442,90 @@ does not claim those gates pass; they belong to S2.
 - `v11b-acceptance-and-gates.md`, G-4.6/G-4.7/G-4.9; `v11b-engineering-backlog.md`, B-4.3–B-4.5; `v11b-technical-readiness-review-F2-F4.md`, F2.
 - `v11-2-ws4-s1f-review.md`, §4: reserve `cs_config:*` as `framework_specific` for VA-0; `v11-2-va0-s1-order.md`, R1/R3/R4.
 - `v11-2-ws4-b44-design-order.md`, D1-D10 and corrections C-1..C-4.
+
+---
+
+# B-4.4 S2 implementation addendum (binding corrections B-1..B-7)
+
+Added for S2 per `v11-2-ws4-b44-design-review.md` (B-1..B-7, AM-1..AM-8) and `OWNER_V11_2_B44_DECISIONS_20261022.md` (OD-B44-1..11; weight **0.60**, feed cap **4 MiB**).
+
+## A. AM-4 lifecycle state machine (B-1)
+
+One owner: `stagerTap` on `httpMsg` (`tap *stagerTap`), created lazily on the first response body fragment. States:
+
+```
+UNCLASSIFIED ──first response body──▶ INSPECTING_PREFIX
+INSPECTING_PREFIX ──reject (text/*, non-identity CE, CL<64KiB octet, no discriminator)──▶ REJECTED (terminal; no slot held)
+INSPECTING_PREFIX ──admit (MZ@0 | octet-stream | validated xorencoded header)──▶ ADMITTED (csconfig.New acquires 1 slot)
+   New refused ──▶ REJECTED + count resource_limit (no slot held)
+ADMITTED ──Feed each fragment──▶ FEEDING
+FEEDING ──fed > 4 MiB without result──▶ FINALIZED (feed_cap_reached; Result/Close release the slot exactly once)
+FEEDING ──finish()/truncation/teardown/reuse/ReassemblyComplete/Finish()/ingest-error defer──▶ FINALIZED (release exactly once)
+```
+
+Pseudocode:
+
+```
+addBody(b):                       # response only
+  if state==REJECTED or FINALIZED: return
+  if state==UNCLASSIFIED: state=INSPECTING_PREFIX; probe=acquireProbe()  # ≤32 probes
+  if state==INSPECTING_PREFIX:
+      append b into prefix (cap 1032); decide():
+         reject -> state=REJECTED; releaseProbe(); return
+         admit  -> carver=csconfig.New(limiter); releaseProbe()
+                   if !carver.admitted: count resource_limit; state=REJECTED; return
+                   state=ADMITTED; carver.Feed(prefixSoFar); fed=len(prefixSoFar)  # replay once
+         undecided (need more bytes, <1032 and not final) -> return
+  if state==ADMITTED/FEEDING:
+      state=FEEDING; fed+=len(b)
+      if fed>4MiB: reason=feed_cap_reached; finalize(emit=false); return
+      carver.Feed(b)
+
+finalize(emit):                   # idempotent; from finish()/close()/gap()/defer
+  if state in {FINALIZED, REJECTED, UNCLASSIFIED}: carver?.Close(); state=FINALIZED; return
+  if truncated or !emit: carver.Close(); state=FINALIZED; return
+  cfg,ok = carver.Result()        # releases slot
+  if ok and eligible(bodyLen) and sufficient(cfg): store cfg for scoreStager
+  else: count the carver Reason() / evidence_insufficient
+  carver.Close()                  # idempotent; state=FINALIZED
+```
+
+`stagerTap.Close()` is idempotent (guards on `state==FINALIZED`); `Result()` and `Close()` on the carver each release at most once (carver `releaseLocked` guard). No use-after-close: all paths route through `finalize`. Engine backstop: `analyzeFile` adds a deferred `e.finishStagers()` on the ingest-error return, and `Finish()` sweeps any still-open tap.
+
+## B. AM-2 HTTP body decision table (B-2)
+
+Bytes: **wire** (TCP) → **transfer-decoded** (de-chunked; v11.1 `addBody` already receives de-chunked payload, `http.go` chunk path) → **content-decoded** (v11.1 never produces this). The tap feeds **transfer-decoded** bytes only.
+
+| Case | Tap behavior |
+|---|---|
+| Correct Content-Length | feed body to declared length; finalize at `finish()` |
+| Incorrect Content-Length (short/long) | feed what the parser delivers; truncation → discard (no emit) |
+| Missing Content-Length (read-until-close) | feed streamed bytes; finalize on close; truncated unless `stUntilClose` |
+| Chunked | feed de-chunked payload only (chunk sizes/CRLF/trailers consumed by parser) |
+| Compressed (`Content-Encoding` ≠ identity/absent) | **reject at admission**; no carver; no decompression |
+| Truncated / gap / malformed chunk | `truncated=true` → finalize(emit=false); Close; no signal |
+| Teardown before completion (conn close / 4-tuple reuse) | `httpHalf.close()`/`finishConn` → finalize(emit=false) |
+| Oversized (> 4 MiB fed) | stop feeding; `feed_cap_reached`; release slot |
+| Misleading stage-like prefix (benign) | carver returns NOT_CARVED (`no_anchor`/`anchor_without_valid_config`); counted; no signal |
+
+No existing HTTP parser contract is changed; the tap only observes `addBody`/`finish`.
+
+## C. B-4 — MZ floor removed
+
+The synthetic `0x1400` floor was circular (derived from the fixture's `0x400` container prefix). **Removed.** MZ@0 admits immediately; the carver validates a complete patch (`0x1000`/`0x1800`) at `Result()`. The octet-stream branch keeps the format-independent **64 KiB** eligibility (signal gated on `bodyLen ≥ 64 KiB` at finalize); the xorencoded branch keeps the decoded-size ≥ `0x1000` header check.
+
+## D. B-3 — per-response feed cap (OD-B44-11)
+
+`stagerFeedCap = 4 MiB`. When cumulative fed bytes exceed it without a result, finalize NOT_CARVED `feed_cap_reached`, release the slot. Not a retained-memory budget — the carver's bounded windows (`3×0x1800`) still govern memory; the cap bounds work/slot-holding so benign large downloads cannot starve the 32-slot pool.
+
+## E. B-7 — tap telemetry counters (verbose only)
+
+Tap-level counters (not carver reasons), in-memory, surfaced only via opt-in verbose text / eval sidecar — never default JSON or normal text: admission branch counts (`mz`, `octet_stream`, `xorencoded`), `resource_limit`, `feed_cap_reached`, `evidence_insufficient`, and the carver `NOT_CARVED` reasons observed at finalize.
+
+## F. B-6 — VA-0 evidence→signal link
+
+The `cs_config:beacon_config` signal, and **every** evidence line and frame for it, go through `acc.evidenceFrom(...)` / `acc.framesFrom(...)` with signal name `cs_config:beacon_config`. In BLIND the signal is `framework_specific` (registry `cs_config:` row), suppressed before scoring/correlation; its evidence/frames are dropped and recorded in the ledger (never projected); a config-only finding disappears; a corroborated finding rebuilds from the surviving generic signals with no `Cobalt Strike` anywhere.
+
+## G. Evidence (D4, OD-B44-7) and signal weight (OD-B44-10)
+
+Weight **0.60**, score 1.0, only after structural validity **and** evidence sufficiency (≥2 recognized non-PUBKEY settings incl. SLEEPTIME or JITTER). Lone config: NoisyOR 0.60 → **medium**, never critical. Evidence order: `Sleep`, `Jitter`, then `SUBMITURI`, `USERAGENT`, `HOST_HEADER`, `PIPENAME` (config values), then `Version:` annotation and `Xorencoded: yes|no`. Each attacker-controlled string capped at 128 UTF-8 bytes; control chars / invalid UTF-8 escaped; no watermark, XOR key, PUBKEY or raw bytes.
