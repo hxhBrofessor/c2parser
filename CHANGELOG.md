@@ -6,25 +6,80 @@ only affects `-timing v2` or adds new output.
 
 ## v11.2
 
-Work in progress. Framework-profile and Sigma signals remain heuristic; a profile
-or rule match is not confirmed framework attribution.
+v11.2 adds passive Cobalt Strike beacon-configuration detection and reworks the
+built-in Sigma set. Framework-profile and Sigma signals remain heuristic; a
+profile or rule match is not confirmed framework attribution.
 
-- **WS-5 / Q-05 — built-in Sigma rule set.** The embedded set is now a single
-  Havoc-labelled HTTP rule (`e1f2bf20`, id unchanged; folds into the matching
-  C2 finding as before). The legacy `^baak` Sliver rule was **retired** (measured
-  corpus and lab delta zero; Sliver-like DNS is covered by the shape and
-  positional-randomness analysis, not a literal prefix). The three
-  Mythic/Apollo-labelled example rules (HTTP, WebSocket, SMB) moved to
-  `docs/sigma-examples/` as optional, non-authoritative examples — not compiled
-  in; load with `-sigma`/`C2PARSER_SIGMA`. The Havoc rule title/description were
-  de-identified (no unit or person strings) and its `references:` repointed to
-  Havoc-project sources; the `*/*` content type is recorded as lab-observed. The
-  hygiene gate now covers the whole tree and `strings(1)` of built binaries.
+- **[default] WS-5 / Q-05 — built-in Sigma rules.** The built-in set is one rule
+  (`e1f2bf20`, id unchanged; folds into the matching C2 finding as before). The
+  legacy `^baak` rule (`50995159`) was retired (measured corpus/lab delta zero;
+  Sliver-like DNS is covered by the shape and positional-randomness analysis).
+  Three Mythic/Apollo example rules moved to `docs/sigma-examples/` as optional,
+  non-authoritative examples — not compiled in; load with `-sigma`/`C2PARSER_SIGMA`.
+  The kept rule's metadata was corrected (no unit or person strings; references
+  repointed) without changing its id.
+- **[default] WS-4 / S1F2 — passive configuration carver.** The standalone
+  `internal/csconfig` carver supports plain and xorencoded stages, single-byte
+  keys, patch lengths `0x1000` and `0x1800`, and approximate version annotations
+  (estimates, not attribution).
+- **[default] WS-4 / B-4.4 — HTTP response tap (released, S2a).** A passive tap
+  with three admission paths (MZ at offset 0; `application/octet-stream` >= 64 KiB;
+  a validated xorencoded header) and a per-response 4 MiB feed cap. It emits
+  `cs_config:beacon_config` (weight 0.60) only after structural validation and
+  evidence sufficiency (>= 2 recognized non-PUBKEY settings, including SLEEPTIME
+  or JITTER). A lone sufficient config is medium, never critical.
+- **VA-0 — framework-blind evaluation.** Available from the test/evaluation
+  harness only; not a product feature or CLI option. G-VA is pending; no
+  vendor-agnostic claim is made.
+- **Documentation.** The v11.1 description now says "adds no new detectors";
+  request-token parsing may still surface additional carrier detections. The
+  diagnostic `-timing v2` `smb_pipe` key grammar remains documented.
+
+### Accepted-change register (v11.1 -> v11.2) — OA-1
+
+The only intended output deltas versus v11.1 are:
+
+1. **AC-1 (Sigma set):** no corpus change (no built-in rule fires); on the Gate A
+   lab, exactly the 6 Havoc C2 findings (cap0/cap1/cap3 x v1/v2) differ in text
+   only — the rule title in the signal detail and the renamed rule file in the
+   evidence; score, severity, signal names and weights are identical.
+2. **AC-2 (B-4.4 tap):** no corpus or lab change (no CS config present); a new
+   `cs_config:beacon_config` signal/finding appears only on inputs that carry a
+   sufficient carved CS configuration.
+3. **AC-3 (VA-0):** test/eval harness only; zero FULL output change.
+4. **AC-4 (version/docs):** the binary differs from the v11.1 build only by the
+   version string, plus docs/CHANGELOG/release-notes.
+
+Any other output delta is a regression.
+
+### Known limitations
+
+- **Sigma rule packs affect scores.** By default C2Parser refreshes community
+  SigmaHQ rules (at most once a day) and loads them alongside its single built-in
+  rule. A matching community rule can raise a finding's score (one user-agent rule
+  contributed up to 0.68 in a synthetic test), so results can differ with the
+  state of the rule cache. For reproducible results use `-offline -no-sigma-update`
+  (optionally with `-sigma-cache <dir>`). A Sigma match is not confirmed framework
+  attribution.
+- **Synthetic benign control (FP_OB).** A synthetic benign HTTP series scores high
+  only when a community Sigma user-agent rule is loaded; its score is driven by
+  that rule and a browser-header anomaly in the fixture, not by the random cookie
+  values or by timing. With the built-in rules only it scores medium (v1) or low
+  (v2). A synthetic observation, not a measured false-positive rate.
+- **B-4.4:** no decompression; xorencoded admission requires a `Content-Length`;
+  4.11 obfuscation, guardrails and multi-byte keys are `NOT_CARVED`.
+- **VA-0 OPEN-1:** mixed signals are suppressed wholesale in BLIND; neutral
+  sanitization remains open.
+- **VA-0 OPEN-5:** surviving generic evidence may retain framework fingerprint
+  bytes; content-level sanitization remains open.
+- No vendor-agnostic performance claim; G-VA is pending.
+
+A profile or rule match is not confirmed framework attribution.
 
 ## v11.1
 
 v11.1 is a focused reliability and parsing release. It improves determinism and HTTP
-request-token handling over v11.0; it does **not** add new detection capability and is **not**
+request-token handling over v11.0; it adds no new detectors and is **not**
 claimed vendor-agnostic (the G-VA vendor-agnostic evaluation is pending). Framework-profile and
 behavioral signals remain heuristic: a high or critical score, or a profile match, is not
 confirmed framework attribution.

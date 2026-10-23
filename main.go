@@ -419,7 +419,7 @@ func runEval(args []string) int {
 }
 
 // version is the release tag.
-const version = "11.1"
+const version = "11.2"
 
 type fileResult struct {
 	res        *engine.Result
