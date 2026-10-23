@@ -44,7 +44,7 @@ var FixedURITimingFamily = true
 func familyOf(name string) (string, bool) {
 	switch {
 	case name == "hdr:ua_c2_default", strings.HasPrefix(name, "default_profile:"), name == "c2_default_certificate",
-		name == "cs_dns_defaults", name == "c2_default_pipe_name":
+		name == "cs_dns_defaults", name == "c2_default_pipe_name", strings.HasPrefix(name, "cs_config:"):
 		return "default_profile", true
 	case strings.HasPrefix(name, "hdr:ua_"):
 		return "ua", true

@@ -258,6 +258,7 @@ func (e *Engine) scoreCore(sc *scorer) []Finding {
 	e.scoreRawStreams(sc)
 	e.scoreLateral(sc)
 	e.scoreSigma(sc)
+	e.scoreStager(sc)
 	if e.cfg.TimingV2 {
 		e.scoreTimingRollups(sc)
 	}

@@ -57,9 +57,13 @@ type httpMsg struct {
 	wordsDone bool       // v11a F03: admission decided (words set, or rejected)
 	chunked   bool
 	truncated bool
+	tap       *stagerTap // WS-4 B-4.4 S2 passive config tap (response only)
 }
 
 func (m *httpMsg) addBody(b []byte) {
+	if m.tap != nil {
+		m.tap.feed(b)
+	}
 	prev := m.bodyLen
 	m.bodyLen += int64(len(b))
 	m.hist.Add(b)
@@ -364,6 +368,9 @@ func (h *httpHalf) parseHead(block []byte, ts time.Time, frame int64) bool {
 	}
 	h.msg = m
 	h.parsed++
+	if streamStager && !m.req {
+		m.tap = h.e.newStagerTap(h.c, m)
+	}
 
 	chunked := strings.Contains(strings.ToLower(m.hdr["transfer-encoding"]), "chunked")
 	cl, hasCL := int64(0), false
@@ -439,6 +446,9 @@ func (h *httpHalf) finish() {
 	h.st = stHead
 	if m != nil {
 		h.e.onHTTPMessage(h.c, m)
+		if m.tap != nil {
+			m.tap.finalize(!m.truncated)
+		}
 	}
 }
 

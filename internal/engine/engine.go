@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/netip"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/gopacket"
@@ -16,6 +17,7 @@ import (
 	"github.com/google/gopacket/reassembly"
 
 	"c2parser/data"
+	"c2parser/internal/csconfig"
 	"c2parser/internal/pcapio"
 	"c2parser/internal/sigma"
 	"c2parser/internal/stats"
@@ -139,7 +141,62 @@ type Engine struct {
 	timingSeries []TimingSeries // v2 only
 	sigmaOrder   []string
 
+	// WS-4 B-4.4 S2 passive config tap (stager.go). stager/stagerConfigs are
+	// lazily initialised; stagerLimiter nil uses the csconfig process limiter.
+	stager           *stagerStats
+	stagerConfigs    map[string]*stagerResult
+	stagerActive     map[*stagerTap]bool
+	stagerLimiter    *csconfig.Limiter
+	stagerVersionMap map[uint16]string
+
 	asm *reassembly.Assembler
+}
+
+// stagerInit lazily allocates tap state (keeps New untouched for callers).
+func (e *Engine) stagerInit() {
+	if e.stager == nil {
+		e.stager = newStagerStats()
+		e.stagerConfigs = map[string]*stagerResult{}
+		e.stagerActive = map[*stagerTap]bool{}
+	}
+}
+
+func (e *Engine) registerStager(t *stagerTap) {
+	e.stagerInit()
+	if !t.registered {
+		e.stagerActive[t] = true
+		t.registered = true
+	}
+}
+
+func (e *Engine) deregisterStager(t *stagerTap) {
+	if t.registered {
+		delete(e.stagerActive, t)
+		t.registered = false
+	}
+}
+
+// recordStagerConfig pins one sufficient config per HTTP channel key,
+// deterministically (D9): first by frame, keeping the lexicographically
+// smaller evidence tuple on a tie so repeated runs agree.
+func (e *Engine) recordStagerConfig(c *tcpConn, r *stagerResult) {
+	e.stagerInit()
+	cl, srv, port, key := stagerKey(c)
+	r.client, r.server, r.port = cl, srv, port
+	if old, ok := e.stagerConfigs[key]; ok {
+		if old.frame < r.frame || (old.frame == r.frame && strings.Join(old.evidence, "\x00") <= strings.Join(r.evidence, "\x00")) {
+			return
+		}
+	}
+	e.stagerConfigs[key] = r
+}
+
+// closeStagers finalizes any tap still open (ingest-error defer and Finish
+// backstop); releases every held carver slot exactly once.
+func (e *Engine) closeStagers() {
+	for t := range e.stagerActive {
+		t.finalize(false)
+	}
 }
 
 // New builds an engine.
@@ -205,6 +262,7 @@ func analyzeFile(path string, cfg Config, includeCandidates bool) (*Result, Deco
 	}
 	defer e.releaseLeanGC()
 	if err := e.Ingest(r); err != nil {
+		e.closeStagers() // B-4.4 S2: release any carver slot on the ingest-error return (AM-4)
 		return nil, DecodeCandidateReport{}, fmt.Errorf("%s: %w", path, err)
 	}
 	res := e.Finish()
@@ -345,6 +403,7 @@ func (e *Engine) Finish() *Result {
 		e.finishConn(c)
 	}
 	e.flushUDP()
+	e.closeStagers() // B-4.4 S2: backstop finalize of any still-open tap
 	e.counters.TCPConns = len(e.allTCP)
 	e.counters.UDPFlows = len(e.udp)
 	for _, u := range e.udp {
