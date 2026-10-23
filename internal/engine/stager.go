@@ -234,8 +234,18 @@ func (t *stagerTap) decide(final bool) {
 	t.admit(branch)
 }
 
-// xorHeader scans offsets 0..1023 for a plausible xorencoded size header.
+// xorHeader scans offsets 0..1023 for a valid xorencoded size header. A real
+// wrapper's decoded size equals the bytes that follow it: Content-Length ==
+// off + 8 + decoded_size (+ a trailer within the carver's 256-byte slack). That
+// exact tie to the body length makes a random 8-byte window an almost-never
+// match, so the prefilter admits essentially only genuine wrappers; the carver
+// re-validates the decoded stream, containment and trailer at Result(). A
+// wrapper requires a declared Content-Length; without one the xor branch is not
+// taken (MZ / octet-stream still apply).
 func (t *stagerTap) xorHeader() bool {
+	if !t.clenOK || t.clen < stagerWrapperMin {
+		return false
+	}
 	p := t.prefix
 	limit := len(p) - 8
 	if limit > 1023 {
@@ -244,8 +254,12 @@ func (t *stagerTap) xorHeader() bool {
 	for off := 0; off <= limit; off++ {
 		nonce := binary.LittleEndian.Uint32(p[off : off+4])
 		enc := binary.LittleEndian.Uint32(p[off+4 : off+8])
-		size := enc ^ nonce
-		if size >= stagerWrapperMin && size <= stagerWrapperMax {
+		size := int64(enc ^ nonce)
+		if size < stagerWrapperMin || size > stagerWrapperMax {
+			continue
+		}
+		slack := t.clen - int64(off) - 8 - size
+		if slack >= 0 && slack <= 256 {
 			return true
 		}
 	}
