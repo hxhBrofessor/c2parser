@@ -325,3 +325,57 @@ func TestStagerEvidence(t *testing.T) {
 		t.Error("evidence not deterministic across runs")
 	}
 }
+
+// --- G-4.7 additions register: exactly 4 rows on the ws4-synthetic lane -----
+
+func TestG47AdditionsRegister(t *testing.T) {
+	type row struct{ Lane, Fixture, Engine, Added string }
+	var reg []row
+	fixtures := []struct {
+		name string
+		body []byte
+	}{{"csconfig-plain", plainStageFixture()}, {"csconfig-xorencoded", xorStageFixture()}}
+	for _, fx := range fixtures {
+		for _, v2 := range []bool{false, true} {
+			eng := "v1"
+			if v2 {
+				eng = "v2"
+			}
+			count := func(on bool) int {
+				streamStager = on
+				defer func() { streamStager = true }()
+				s := newSynth(t)
+				ts := s.now
+				c := s.tcp(ts, "10.9.9.9", 55000, "203.0.113.99", 80)
+				ts = c.Send(ts.Add(time.Second), true, httpReq("GET", "/s", []string{"Host: 203.0.113.99"}, ""), 1400)
+				ts = c.Send(ts.Add(30*time.Millisecond), false, httpResp("HTTP/1.1 200 OK", []string{"Content-Type: application/octet-stream"}, string(fx.body)), 1400)
+				c.Close(ts.Add(time.Second))
+				n := 0
+				for _, f := range s.analyze(Config{TimingV2: v2}).Findings {
+					for _, sg := range f.Signals {
+						if sg.Name == stagerSignalName {
+							n++
+						}
+					}
+				}
+				return n
+			}
+			base := count(false)
+			branch := count(true)
+			if base != 0 {
+				t.Errorf("%s/%s: base (tap off) already has %d cs_config signals", fx.name, eng, base)
+			}
+			if branch-base != 1 {
+				t.Errorf("%s/%s: additions = %d, want exactly 1", fx.name, eng, branch-base)
+			}
+			reg = append(reg, row{"ws4-synthetic", fx.name, eng, "one cs_config:beacon_config"})
+		}
+	}
+	if len(reg) != 4 {
+		t.Fatalf("register rows = %d, want 4", len(reg))
+	}
+	if path := os.Getenv("B44_REGISTER"); path != "" {
+		b, _ := json.MarshalIndent(reg, "", " ")
+		os.WriteFile(path, b, 0o644)
+	}
+}
