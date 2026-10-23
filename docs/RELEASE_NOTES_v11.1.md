@@ -1,7 +1,7 @@
 # C2Parser v11.1 — Release Notes
 
 v11.1 is a focused reliability and parsing release over v11.0. It improves determinism and HTTP
-request-token handling; it does **not** add new detection capability and is **not** claimed
+request-token handling; it adds no new detectors and is **not** claimed
 vendor-agnostic (the G-VA vendor-agnostic evaluation is pending).
 
 Framework-profile and behavioral signals remain heuristic: a high or critical score, or a
