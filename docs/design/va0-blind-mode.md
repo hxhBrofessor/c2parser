@@ -60,6 +60,29 @@ A closed framework-name list in the registry (Cobalt Strike, Brute Ratel, Havoc,
 
 Categories are generic semantic labels assigned by the detector at `sc.get`, not framework names, so they are retained in BLIND. The one category that is *framework-origin* is the standalone `Sigma match` finding (`CatSigma`), created only from a Sigma rule hit: when that rule is a suppressed `sigma_attribution` signal, the standalone finding has an empty blind signal set and is dropped by the `score ≥ 0.05` gate, so no framework-origin category survives. A finding that keeps a semantic category (e.g. `C2 channel`) on surviving generic signals keeps that category; the existing title demotion (`HTTP C2 …` → `HTTP channel …` below 0.2) already reflects the blind score. No per-detector category is derived from a framework name. OPEN-4: a finding whose category was chosen by a detector *because* a framework signal fired (not reflected in the signal set) is not separately re-derived in slice 1; none is known among current detectors, tracked as OPEN.
 
+## 5b. Evidence/frame link audit (S1b / V1a-1)
+
+Every `a.evidence` / `a.frames` call that lives in a function which also adds a **suppressed-class** signal (framework_specific / sigma_attribution / mixed / unknown — derived_correlation and generic do not count, they are retained) was audited. An AST guard test (`internal/engine/va0_evlink_test.go`, `TestVA0EvidenceLinkDiscipline`) enforces this going forward: in such a function a plain `evidence`/`frames` call fails the test unless it is converted to `evidenceFrom`/`framesFrom` or carries a justification on the test's allow-list.
+
+**CONVERTED** (tied to a suppressed signal, dropped in BLIND): the two framework *frame* sites, done in S1a —
+- `findings.go` `scoreSMB` `c2_framing_in_pipe` magic frames → `framesFrom("c2_framing_in_pipe", …)`;
+- `httpdefaults.go` `scoreFrameworkDefaults` `default_profile:*` frames → `framesFrom(profSig, …)`.
+
+**GENERIC** (observed-data companion lines, retained; none names a framework — framework attribution lives only in the suppressed signal's `Detail`, which dies with the signal):
+
+| Function (file) | call | content | why generic |
+|---|---|---|---|
+| `scoreBehavior` (behavior.go:215,217,330,334 ev; 218,336 fr) | evidence/frames | SNI, connection counts, JA3/JA4, first frame | observed TLS/channel facts; the framework signal is `c2_default_certificate`/`ioc:domain` (suppressed) |
+| `scoreCarriers` (findings.go:1022 ev; 1047 fr) | evidence/frames | WebSocket message counts, frame | observed volume; framework signal is `sig:*` (suppressed) |
+| `scoreDNS` (findings.go:824,851 ev; 826 fr) | evidence/frames | longest/example DNS names, first frame | observed query names (data, not a framework label); framework signal is `ioc:domain`/`cs_dns_defaults` (suppressed) |
+| `scoreHTTP` (findings.go:424,426,429 ev; 394,435 fr) | evidence/frames | request/response counts, User-Agent string, methods/URIs, first frame | observed HTTP facts; framework signal is `sig:*`/`hdr:*` (suppressed). See OPEN-5. |
+| `scoreRawStreams` (findings.go:1074 ev; 1075 fr) | evidence/frames | connection counts, frames | observed volume; framework signal is `sig:*` (suppressed) |
+| `scoreSMB` (findings.go:602,640 ev; 604,642 fr) | evidence/frames | SMB authenticated user, pipe open/first frames | observed SMB session facts; framework signals (`c2_default_pipe_name`, `mythic_message_in_pipe`, `c2_framing_in_pipe`) are suppressed and their magic frames are the converted site above |
+
+`scoreSigma` (sigmaemit.go) builds its signal name in a local variable (`sigName := "sigma:"+shortID(r)`), so the AST guard does not statically see a non-generic `a.add`; it is nonetheless safe because the function's explicit BLIND guard `continue`s past its `evidence`/`frames` for any suppressed `sigma_attribution` rule (§4 bypass 4). Documented limitation of the static guard.
+
+**OPEN-5 (content-level sanitization):** a GENERIC evidence line can still echo framework *fingerprint* bytes that are not a framework *name* — e.g. `scoreHTTP`'s `User-Agent: <default-profile UA>`. VA-4 (no framework names) holds, but a VA-3 reviewer could re-derive attribution from such content. Slice 1b keeps these lines (dropping them would also remove benign observed data) and tracks content-level sanitization of known default strings with OPEN-1 (mixed-signal handling). Not a blocker for INTEG-2 / B-4.4.
+
 ## 6. Audit ledger (R5)
 
 Per finding: the suppressed signal names, their classes (incl. `unclassified` for fail-closed), and the FULL→BLIND score/severity delta (computed by the harness by matching FULL and BLIND findings on their key). Ledger is harness/test-only and never carries raw payload bytes. It is the raw material for VA-3/VA-5.
