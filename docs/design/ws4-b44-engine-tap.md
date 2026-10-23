@@ -529,3 +529,28 @@ The `cs_config:beacon_config` signal, and **every** evidence line and frame for 
 ## G. Evidence (D4, OD-B44-7) and signal weight (OD-B44-10)
 
 Weight **0.60**, score 1.0, only after structural validity **and** evidence sufficiency (≥2 recognized non-PUBKEY settings incl. SLEEPTIME or JITTER). Lone config: NoisyOR 0.60 → **medium**, never critical. Evidence order: `Sleep`, `Jitter`, then `SUBMITURI`, `USERAGENT`, `HOST_HEADER`, `PIPENAME` (config values), then `Version:` annotation and `Xorencoded: yes|no`. Each attacker-controlled string capped at 128 UTF-8 bytes; control chars / invalid UTF-8 escaped; no watermark, XOR key, PUBKEY or raw bytes.
+
+## H. S2a corrections (review S2-1..S2-3)
+
+- **S2-1 (probe-slot release, FIXED).** A `stagerTap` is registered in the
+  engine's active set as soon as it acquires a pre-admission probe (INSPECTING),
+  not only at admission, and `finalize` deregisters on every terminal branch. So
+  `closeStagers()` — the `analyzeFile` ingest-error defer and the `Finish()`
+  backstop — finalizes INSPECTING taps and releases their probe exactly once.
+  Without this, 32 abandoned inspecting responses (common with truncated/corrupt
+  pcaps) permanently exhausted the process-global 32-probe pool and silently
+  disabled the tap.
+- **S2-2 (xorencoded requires Content-Length, accepted limitation).** The
+  xorencoded prefilter ties the decoded size to the declared Content-Length
+  (within the carver's 256-byte slack). A chunked xorencoded stage that is not
+  typed `application/octet-stream` and carries no Content-Length is therefore not
+  admitted via the xor branch (MZ@0 and octet-stream still apply). This keeps
+  false admissions ~0; it is counted as `xor_unadmitted_no_clen` (tap telemetry,
+  verbose/sidecar only) when a valid-size header is seen without a length.
+- **S2-3 (worst-case memory bound).** Concurrent tap memory is bounded by
+  construction: at most 32 carvers × (2 bounded decode windows of 3×0x1800 B
+  each + metadata) + at most 32 pre-admission probes × 1032 B ≈ **1.3 MiB**
+  process-wide, independent of body sizes (the 4 MiB feed cap bounds work, not
+  retention). The 33-response test proves the cap functionally; G-4.9 need not
+  rerun for S2a since only probe bookkeeping and a counter changed (no change to
+  the retained-memory model).

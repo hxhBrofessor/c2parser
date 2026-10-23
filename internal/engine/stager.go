@@ -62,6 +62,7 @@ type stagerStats struct {
 	resourceLimit  int
 	feedCapReached int
 	evidenceInsuff int
+	xorNoClen      int
 	structValid    int
 	signalEmitted  int
 	notCarved      map[string]int
@@ -79,22 +80,23 @@ type stagerResult struct {
 }
 
 type stagerTap struct {
-	e          *Engine
-	c          *tcpConn
-	frame      int64
-	state      stagerState
-	carver     *csconfig.Carver
-	prefix     []byte
-	fed        int64
-	probeHeld  bool
-	octet      bool   // content-type is application/octet-stream
-	branch     string // admission branch: "mz" | "octet" | "xor"
-	bodyLen    int64
-	rejectHdr  bool  // header pre-check already rejected (text / non-identity CE)
-	clen       int64 // declared Content-Length (if clenOK)
-	clenOK     bool
-	ctype      string
-	registered bool
+	e             *Engine
+	c             *tcpConn
+	frame         int64
+	state         stagerState
+	carver        *csconfig.Carver
+	prefix        []byte
+	fed           int64
+	probeHeld     bool
+	octet         bool   // content-type is application/octet-stream
+	branch        string // admission branch: "mz" | "octet" | "xor"
+	bodyLen       int64
+	rejectHdr     bool  // header pre-check already rejected (text / non-identity CE)
+	clen          int64 // declared Content-Length (if clenOK)
+	clenOK        bool
+	ctype         string
+	registered    bool
+	countedNoClen bool
 }
 
 // newStagerTap creates the tap from the response headers (content-type /
@@ -169,6 +171,10 @@ func (t *stagerTap) feed(b []byte) {
 			return
 		}
 		t.state = stInspecting
+		// S2-1: register as soon as a probe is held, so closeStagers()
+		// finalizes INSPECTING taps (and releases their probe) on the
+		// ingest-error / Finish backstop paths — not only ADMITTED ones.
+		t.e.registerStager(t)
 		fallthrough
 	case stInspecting:
 		// Buffer up to the probe cap; admit() replays the whole prefix once.
@@ -243,7 +249,16 @@ func (t *stagerTap) decide(final bool) {
 // wrapper requires a declared Content-Length; without one the xor branch is not
 // taken (MZ / octet-stream still apply).
 func (t *stagerTap) xorHeader() bool {
-	if !t.clenOK || t.clen < stagerWrapperMin {
+	if !t.clenOK {
+		// S2-2: a plausible wrapper size header with no declared length is not
+		// admitted (the size can't be tied to the body); count it once.
+		if !t.countedNoClen && t.plausibleXorHeader() {
+			t.e.stager.xorNoClen++
+			t.countedNoClen = true
+		}
+		return false
+	}
+	if t.clen < stagerWrapperMin {
 		return false
 	}
 	p := t.prefix
@@ -315,10 +330,12 @@ func (t *stagerTap) finalize(emit bool) {
 			t.carver = nil
 		}
 		t.releaseProbe()
+		t.e.deregisterStager(t)
 		t.state = stFinalized
 		return
 	case stUnclassified:
 		t.releaseProbe()
+		t.e.deregisterStager(t)
 		t.state = stFinalized
 		return
 	case stInspecting:
@@ -330,6 +347,7 @@ func (t *stagerTap) finalize(emit bool) {
 				t.carver.Close()
 				t.carver = nil
 			}
+			t.e.deregisterStager(t)
 			t.state = stFinalized
 			return
 		}
@@ -358,6 +376,22 @@ func (t *stagerTap) finalize(emit bool) {
 	}
 	t.carver.Close()
 	t.state = stFinalized
+}
+func (t *stagerTap) plausibleXorHeader() bool {
+	p := t.prefix
+	limit := len(p) - 8
+	if limit > 1023 {
+		limit = 1023
+	}
+	for off := 0; off <= limit; off++ {
+		nonce := binary.LittleEndian.Uint32(p[off : off+4])
+		enc := binary.LittleEndian.Uint32(p[off+4 : off+8])
+		size := int64(enc ^ nonce)
+		if size >= stagerWrapperMin && size <= stagerWrapperMax {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *stagerTap) acquireProbe() bool {
@@ -518,6 +552,7 @@ func (e *Engine) StagerCounts() map[string]int {
 	m["resource_limit"] = s.resourceLimit
 	m["feed_cap_reached"] = s.feedCapReached
 	m["evidence_insufficient"] = s.evidenceInsuff
+	m["xor_unadmitted_no_clen"] = s.xorNoClen
 	m["structurally_valid"] = s.structValid
 	m["signal_emitted"] = s.signalEmitted
 	for r, n := range s.notCarved {
